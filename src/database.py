@@ -80,10 +80,27 @@ async def get_db_context() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def init_db() -> None:
+    """Initialize the local SQLAlchemy schema safely across multiple workers.
+
+    PostgreSQL's CREATE TABLE IF NOT EXISTS check is not sufficient when two
+    Uvicorn workers start simultaneously: both workers can pass the check and
+    race while PostgreSQL creates the table's composite type. A transaction-
+    independent advisory lock serializes schema initialization for the whole
+    database while still allowing normal concurrent application traffic.
+    """
     from src.models import Base
 
-    async with get_engine().begin() as connection:
-        await connection.run_sync(Base.metadata.create_all)
+    async with get_engine().connect() as connection:
+        await connection.execute(
+            text("SELECT pg_advisory_lock(hashtext('loystar_mcp_schema_init'))")
+        )
+        try:
+            async with connection.begin():
+                await connection.run_sync(Base.metadata.create_all)
+        finally:
+            await connection.execute(
+                text("SELECT pg_advisory_unlock(hashtext('loystar_mcp_schema_init'))")
+            )
 
 
 async def check_db() -> None:
