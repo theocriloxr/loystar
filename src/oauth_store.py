@@ -181,9 +181,9 @@ class OAuthStore:
             raise ValueError("unsupported grant type")
         if responses != ["code"] and set(responses) != {"code"}:
             raise ValueError("only response_type=code is supported")
-        if token_endpoint_auth_method not in {"none", "client_secret_post"}:
+        if token_endpoint_auth_method not in {"none", "client_secret_post", "client_secret_basic"}:
             raise ValueError("unsupported token endpoint authentication method")
-        if token_endpoint_auth_method == "client_secret_post" and not client_secret:
+        if token_endpoint_auth_method in {"client_secret_post", "client_secret_basic"} and not client_secret:
             client_secret = secrets.token_urlsafe(48)
 
         final_client_id = client_id or f"loy_client_{secrets.token_urlsafe(24)}"
@@ -233,6 +233,7 @@ class OAuthStore:
 
         response: dict[str, Any] = {
             "client_id": final_client_id,
+            "client_id_issued_at": int(_now().timestamp()),
             "client_name": client_name,
             "redirect_uris": client.redirect_uris,
             "grant_types": grants,
@@ -241,6 +242,7 @@ class OAuthStore:
         }
         if client_secret:
             response["client_secret"] = client_secret
+            response["client_secret_expires_at"] = 0
         return response
 
     async def register_static_clients(self, clients: list[dict[str, Any]]) -> None:

@@ -428,7 +428,7 @@ async def oauth_authorization_server_metadata(request: Request):
         "grant_types_supported": ["authorization_code", "refresh_token"],
         "code_challenge_methods_supported": ["S256"],
         "scopes_supported": ["loystar.read", "offline_access"],
-        "token_endpoint_auth_methods_supported": ["none", "client_secret_post"],
+        "token_endpoint_auth_methods_supported": ["none", "client_secret_post", "client_secret_basic"],
     }
     if settings.oauth_allow_dynamic_registration:
         metadata["registration_endpoint"] = f"{issuer}/oauth/register"
@@ -613,6 +613,16 @@ async def oauth_token(request: Request):
     grant_type = str(form.get("grant_type") or "")
     client_id = str(form.get("client_id") or "")
     client_secret = str(form.get("client_secret") or "") or None
+    if not client_id:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.lower().startswith("basic "):
+            import base64
+            try:
+                decoded = base64.b64decode(auth_header[6:]).decode("utf-8")
+                if ":" in decoded:
+                    client_id, client_secret = decoded.split(":", 1)
+            except Exception:
+                pass
     resource = str(form.get("resource") or "")
     try:
         validate_oauth_resource(resource)

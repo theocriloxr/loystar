@@ -128,6 +128,8 @@ class ProductionHTTPSMiddleware:
             response = JSONResponse({"detail": "HTTPS is required."}, status_code=400)
             await response(scope, receive, send)
             return
+            
+        scope["scheme"] = "https"
         await self.app(scope, receive, send)
 
 
