@@ -95,7 +95,7 @@ async def init_db() -> None:
             text("SELECT pg_advisory_lock(hashtext('loystar_mcp_schema_init'))")
         )
         try:
-            async with connection.begin():
+            async with engine.begin() as connection:
                 await connection.run_sync(Base.metadata.create_all)
         finally:
             await connection.execute(
