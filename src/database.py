@@ -90,15 +90,15 @@ async def init_db() -> None:
     """
     from src.models import Base
 
-    async with get_engine().connect() as connection:
-        await connection.execute(
+    async with get_engine().connect() as outer_connection:
+        await outer_connection.execute(
             text("SELECT pg_advisory_lock(hashtext('loystar_mcp_schema_init'))")
         )
         try:
-            async with _engine.begin() as connection:
-                await connection.run_sync(Base.metadata.create_all)
+            async with get_engine().begin() as inner_connection:
+                await inner_connection.run_sync(Base.metadata.create_all)
         finally:
-            await connection.execute(
+            await outer_connection.execute(
                 text("SELECT pg_advisory_unlock(hashtext('loystar_mcp_schema_init'))")
             )
 
