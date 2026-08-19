@@ -1,0 +1,158 @@
+openapi: "3.1.0"
+info:
+  title: Loystar MCP Server — ChatGPT Custom GPT Actions
+  description: |
+    Pre-configured MCP tools for the Loystar Custom GPT.
+    Merchants connect their Loystar account once via OAuth,
+    then ask business questions in natural language.
+
+    This OpenAPI spec mirrors the MCP tool surface so ChatGPT
+    can discover and call Loystar tools without needing to
+    configure a raw MCP server endpoint manually.
+  version: "1.0.0"
+servers:
+  - url: "https://YOUR_DOMAIN"
+    description: "Your deployed Loystar MCP server URL"
+paths:
+  /health:
+    get:
+      operationId: healthCheck
+      summary: Check if the Loystar MCP server is running
+      responses:
+        "200":
+          description: Server health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "healthy"
+
+  /mcp/tools:
+    get:
+      operationId: listTools
+      summary: List all available Loystar MCP tools the AI can call
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Tool definitions
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /mcp/tools/call:
+    post:
+      operationId: callTool
+      summary: Execute a Loystar MCP tool
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  description: Tool name (e.g. loystar_get_customers, loystar_get_sales)
+                arguments:
+                  type: object
+                  description: Tool-specific arguments
+      responses:
+        "200":
+          description: Tool execution result
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /mcp/rpc:
+    post:
+      operationId: mcpRpc
+      summary: JSON-RPC 2.0 endpoint for MCP protocol messages
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                jsonrpc:
+                  type: string
+                  default: "2.0"
+                method:
+                  type: string
+                  description: "MCP method (initialize, tools/list, tools/call, etc.)"
+                params:
+                  type: object
+                id:
+                  type: string
+      responses:
+        "200":
+          description: JSON-RPC response
+
+  /auth/loystar/sign_in:
+    post:
+      operationId: signInLoystar
+      summary: Exchange merchant email/password for Loystar session headers
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  description: Loystar merchant email
+                password:
+                  type: string
+                  description: Loystar merchant password
+      responses:
+        "200":
+          description: Session headers for subsequent tool calls
+  /onboard/plans:
+    get:
+      operationId: listPlans
+      summary: List available subscription plans for the Loystar MCP server
+      responses:
+        "200":
+          description: Plan list with pricing
+          content:
+            application/json:
+              schema:
+                type: object
+components:
+  securitySchemes:
+    ConnectorApiKey:
+      type: apiKey
+      in: header
+      name: x-connector-api-key
+      description: Optional connector API key for server-to-server auth
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: OAuth bearer token obtained through the OAuth flow
+  schemas:
+    ToolCallResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        result:
+          type: object
+          description: Tool-specific result data
+    ErrorResponse:
+      type: object
+      properties:
+        detail:
+          type: string

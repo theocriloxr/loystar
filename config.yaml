@@ -1,0 +1,102 @@
+# Loystar MCP Server Configuration
+# This configuration file defines the core settings for the Loystar Customer Loyalty Manager AI Agent
+
+server:
+  name: "Loystar MCP Server"
+  version: "1.0.0"
+  host: "0.0.0.0"
+  port: 8000
+  debug: false
+
+database:
+  url: "${DATABASE_URL}"
+  pool_size: 10
+  max_overflow: 20
+  echo: false
+
+redis:
+  url: "${REDIS_URL}"
+  decode_responses: true
+
+vector_db:
+  provider: "pinecone"
+  api_key: "${PINECONE_API_KEY}"
+  environment: "${PINECONE_ENVIRONMENT}"
+  index_name: "loystar_memories"
+  dimension: 1536
+
+security:
+  jwt_secret_key: "${JWT_SECRET_KEY}"
+  jwt_algorithm: "HS256"
+  jwt_expiration_minutes: 60
+  multi_tenant_isolation: true
+  pii_redaction_enabled: true
+
+external_apis:
+  stripe:
+    secret_key: "${STRIPE_SECRET_KEY}"
+    webhook_secret: "${STRIPE_WEBHOOK_SECRET}"
+  paystack:
+    secret_key: "${PAYSTACK_SECRET_KEY}"
+  twilio:
+    account_sid: "${TWILIO_ACCOUNT_SID}"
+    auth_token: "${TWILIO_AUTH_TOKEN}"
+    phone_number: "${TWILIO_PHONE_NUMBER}"
+  sendgrid:
+    api_key: "${SENDGRID_API_KEY}"
+
+hitl:
+  enabled: true
+  auto_approve_threshold: 100.0
+  campaign_size_threshold: 50
+  approval_webhook_url: "${HITL_APPROVAL_WEBHOOK_URL}"
+  redis_queue_prefix: "loystar:hitl:queue"
+
+resources:
+  customer_profile:
+    uri_template: "loystar://customers/{customer_id}/profile"
+    description: "Exposes real-time loyalty tier status, current point balances, lifestyle tags, and contextual interaction metadata"
+  merchant_campaigns:
+    uri_template: "loystar://merchants/{workspace_id}/campaigns/active"
+    description: "Supplies the current active parameters of the business, financial margin constraints, and promotional rule-sets"
+
+tools:
+  calculate_churn_risk:
+    name: "calculate_churn_risk"
+    description: "Analyzes multi-channel transaction velocities and calculates 0.0-1.0 churn risk probability scores"
+    parameters:
+      - name: "customer_id"
+        type: "string"
+        required: true
+  generate_custom_coupon:
+    name: "generate_custom_coupon"
+    description: "Dynamically provisions unique coupon codes within Stripe or Paystack core infrastructure environments"
+    parameters:
+      - name: "customer_id"
+        type: "string"
+        required: true
+      - name: "discount_percent"
+        type: "integer"
+        required: true
+      - name: "expiry_hours"
+        type: "integer"
+        required: true
+  dispatch_omnichannel_message:
+    name: "dispatch_omnichannel_message"
+    description: "Routes branded outbound retention copy directly through verified Twilio, Sendgrid, or WhatsApp Business APIs"
+    parameters:
+      - name: "customer_id"
+        type: "string"
+        required: true
+      - name: "channel"
+        type: "string"
+        enum: ["SMS", "WHATSAPP", "EMAIL"]
+        required: true
+      - name: "message_body"
+        type: "string"
+        required: true
+
+logging:
+  level: "INFO"
+  format: "json"
+  output: "stdout"

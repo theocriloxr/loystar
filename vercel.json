@@ -1,0 +1,19 @@
+{
+  "functions": {
+    "api/index.py": {
+      "maxDuration": 60,
+      "memory": 300
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/api/index"
+    }
+  ],
+  "build": {
+    "env": {
+      "PYTHON_VERSION": "3.12"
+    }
+  }
+}

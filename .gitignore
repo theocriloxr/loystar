@@ -1,0 +1,21 @@
+
+# Aider Studio (auto-added)
+REPO_MAP.md
+.aider/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Local secrets
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# Local server logs
+uvicorn.out.log
+uvicorn.err.log
