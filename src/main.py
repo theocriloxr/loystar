@@ -116,7 +116,7 @@ class OAuthClientRegistrationRequest(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    client_name: str = Field(..., min_length=1, max_length=255)
+    client_name: Optional[str] = Field(default="Unknown Client", max_length=255)
     redirect_uris: list[str] = Field(..., min_length=1, max_length=10)
     grant_types: list[str] = Field(
         default_factory=lambda: ["authorization_code", "refresh_token"]

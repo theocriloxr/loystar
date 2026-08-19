@@ -33,7 +33,7 @@ class Settings(BaseSettings):
         alias="ALLOWED_ORIGINS",
     )
     max_request_body_bytes: int = Field(default=1_048_576, alias="MAX_REQUEST_BODY_BYTES")
-    trust_proxy_headers: bool = Field(default=False, alias="TRUST_PROXY_HEADERS")
+    trust_proxy_headers: bool = Field(default=True, alias="TRUST_PROXY_HEADERS")
     enable_demo_routes: bool = Field(default=True, alias="ENABLE_DEMO_ROUTES")
     enable_legacy_routes: bool = Field(default=True, alias="ENABLE_LEGACY_ROUTES")
     enable_prototype_routes: bool = Field(default=True, alias="ENABLE_PROTOTYPE_ROUTES")
