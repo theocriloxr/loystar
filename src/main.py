@@ -114,7 +114,7 @@ class LoystarSignInRequest(BaseModel):
 class OAuthClientRegistrationRequest(BaseModel):
     """RFC 7591 fields supported by the public-client registration endpoint."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     client_name: str = Field(..., min_length=1, max_length=255)
     redirect_uris: list[str] = Field(..., min_length=1, max_length=10)
