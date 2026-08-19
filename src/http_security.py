@@ -114,6 +114,12 @@ class ProductionHTTPSMiddleware:
         if scope["type"] != "http" or not settings.is_production:
             await self.app(scope, receive, send)
             return
+            
+        path = scope.get("path", "")
+        if path == "/health" or path == "/live":
+            await self.app(scope, receive, send)
+            return
+            
         headers = Headers(scope=scope)
         scheme = scope.get("scheme", "http")
         if settings.trust_proxy_headers:
