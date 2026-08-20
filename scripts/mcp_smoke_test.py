@@ -108,12 +108,37 @@ def main() -> int:
             print(f"[FAIL] {name}: {exc}")
             return 1
 
+        if name == "initialize" and not args.token:
+            print(f"[FAIL] {name}: expected OAuth 401 challenge, got {status}")
+            return 1
+
         if name == "tools-list" and not args.token:
             continue
 
         if status != 200:
             print(f"[FAIL] {name}: HTTP {status}")
             return 1
+
+        if name == "protected-resource":
+            if payload.get("resource") != f"{base}/mcp":
+                print(f"[FAIL] {name}: resource is not the canonical MCP URL")
+                return 1
+            if payload.get("authorization_servers") != [base]:
+                print(f"[FAIL] {name}: authorization server does not match base URL")
+                return 1
+
+        if name == "authorization-server":
+            if payload.get("issuer") != base:
+                print(f"[FAIL] {name}: issuer does not match base URL")
+                return 1
+            required_endpoints = {
+                "authorization_endpoint": f"{base}/oauth/authorize",
+                "token_endpoint": f"{base}/oauth/token",
+                "revocation_endpoint": f"{base}/oauth/revoke",
+            }
+            if any(payload.get(key) != value for key, value in required_endpoints.items()):
+                print(f"[FAIL] {name}: advertised OAuth endpoints are inconsistent")
+                return 1
 
         if name == "tools-list":
             names = {tool["name"] for tool in payload.get("result", {}).get("tools", [])}
