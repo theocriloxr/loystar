@@ -434,8 +434,10 @@ async def oauth_authorization_server_metadata(request: Request):
     }
     if settings.oauth_allow_dynamic_registration:
         metadata["registration_endpoint"] = f"{issuer}/oauth/register"
-    return metadata
 
+    metadata["client_id_metadata_document_supported"] = True
+
+    return metadata
 
 @app.post("/oauth/register")
 async def oauth_register(
