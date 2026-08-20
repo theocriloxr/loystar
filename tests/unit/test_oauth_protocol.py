@@ -49,14 +49,35 @@ def test_cimd_metadata_requires_exact_identity_and_redirect():
             "client_id": client_id,
             "client_name": "Claude",
             "redirect_uris": ["https://claude.ai/api/mcp/auth_callback"],
-            "grant_types": ["authorization_code", "refresh_token"],
+            "grant_types": [
+                "authorization_code",
+                "refresh_token",
+                "urn:ietf:params:oauth:grant-type:jwt-bearer",
+            ],
             "response_types": ["code"],
             "token_endpoint_auth_method": "none",
         },
     )
     assert client.redirect_uris == ["https://claude.ai/api/mcp/auth_callback"]
+    assert client.grant_types == ["authorization_code", "refresh_token"]
     with pytest.raises(ValueError, match="mismatch"):
         _client_from_metadata(client_id, {"client_id": "https://evil.example"})
+
+
+def test_cimd_metadata_requires_authorization_code_grant():
+    client_id = "https://client.example/oauth/metadata"
+    with pytest.raises(ValueError, match="must support authorization_code"):
+        _client_from_metadata(
+            client_id,
+            {
+                "client_id": client_id,
+                "client_name": "Wrong grant client",
+                "redirect_uris": ["https://client.example/callback"],
+                "grant_types": ["urn:ietf:params:oauth:grant-type:jwt-bearer"],
+                "response_types": ["code"],
+                "token_endpoint_auth_method": "none",
+            },
+        )
 
 
 @pytest.mark.parametrize(

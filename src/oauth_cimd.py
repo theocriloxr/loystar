@@ -94,11 +94,19 @@ def _client_from_metadata(
         "none",
     )
 
-    if not isinstance(grants, list):
+    if not isinstance(grants, list) or not all(isinstance(value, str) for value in grants):
         raise ValueError("invalid grant_types")
 
-    if not set(grants).issubset({"authorization_code", "refresh_token"}):
-        raise ValueError("unsupported grant_types")
+    # A CIMD describes every grant the client can use across authorization
+    # servers. Claude also advertises JWT bearer, which this server neither
+    # advertises nor accepts. Require the grant needed by this flow and retain
+    # only the intersection supported here; /oauth/token still fails closed for
+    # every unsupported grant_type.
+    if "authorization_code" not in grants:
+        raise ValueError("client metadata must support authorization_code")
+    supported_grants = [
+        value for value in grants if value in {"authorization_code", "refresh_token"}
+    ]
 
     if not isinstance(responses, list) or set(responses) != {"code"}:
         raise ValueError("unsupported response_types")
@@ -110,7 +118,7 @@ def _client_from_metadata(
         client_id=client_id,
         client_name=name,
         redirect_uris=list(dict.fromkeys(normalized_redirects)),
-        grant_types=list(grants),
+        grant_types=supported_grants,
         response_types=list(responses),
         token_endpoint_auth_method=auth_method,
         client_secret_hash=None,
