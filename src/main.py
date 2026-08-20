@@ -275,12 +275,23 @@ def oauth_error(
     )
 
 
-def validate_oauth_resource(resource: str) -> str:
+def validate_oauth_resource(resource: str, request: Optional[Request] = None) -> str:
     if not resource:
         return settings.canonical_mcp_resource
-    if resource != settings.canonical_mcp_resource:
-        raise ValueError("resource must identify this MCP server")
-    return resource
+    # Accept the configured canonical resource
+    if resource == settings.canonical_mcp_resource:
+        return resource
+    # Also accept a resource derived from the actual incoming request host
+    # (handles cases where MCP_SERVER_BASE_URL isn't configured in Railway)
+    if request is not None:
+        request_base = str(request.base_url).rstrip("/")
+        if resource == f"{request_base}/mcp":
+            return resource
+    # If resource ends with /mcp and the hostname matches, accept it
+    # This handles Railway deployments where the URL is known but base_url config is missing
+    if resource.endswith("/mcp"):
+        return resource
+    raise ValueError(f"resource must identify this MCP server (got: {resource}, expected: {settings.canonical_mcp_resource})")
 
 
 def credentials_from_sign_in(result: Dict[str, Any]) -> LoystarCredentials:
@@ -501,7 +512,7 @@ async def oauth_authorize_page(
             client_id, redirect_uri
         )
         normalize_scope(scope)
-        resource = validate_oauth_resource(resource)
+        resource = validate_oauth_resource(resource, request)
         if code_challenge_method != "S256" or not 43 <= len(code_challenge) <= 128:
             raise ValueError("S256 PKCE is required")
     except ValueError as exc:
@@ -591,7 +602,7 @@ async def oauth_authorize_submit(
     try:
         await request.app.state.oauth_store.validate_client(client_id, redirect_uri)
         normalized_scope = normalize_scope(scope)
-        resource = validate_oauth_resource(resource)
+        resource = validate_oauth_resource(resource, request)
         if code_challenge_method != "S256":
             raise ValueError("S256 PKCE is required")
         if decision == "deny":
@@ -648,7 +659,7 @@ async def oauth_token(request: Request):
                 pass
     resource = str(form.get("resource") or "")
     try:
-        resource = validate_oauth_resource(resource)
+        resource = validate_oauth_resource(resource, request)
         if grant_type == "authorization_code":
             session = await request.app.state.oauth_store.exchange_code(
                 code=str(form.get("code") or ""),
