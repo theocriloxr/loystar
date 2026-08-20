@@ -14,7 +14,6 @@ import httpx
 
 from src.oauth_store import OAuthStore, RegisteredClient, validate_redirect_uri
 
-
 _CACHE: dict[str, tuple[float, RegisteredClient]] = {}
 _LOCK = asyncio.Lock()
 _TTL = 300
@@ -98,9 +97,7 @@ def _client_from_metadata(
     if not isinstance(grants, list):
         raise ValueError("invalid grant_types")
 
-    if not set(grants).issubset(
-        {"authorization_code", "refresh_token"}
-    ):
+    if not set(grants).issubset({"authorization_code", "refresh_token"}):
         raise ValueError("unsupported grant_types")
 
     if not isinstance(responses, list) or set(responses) != {"code"}:
@@ -130,9 +127,7 @@ async def _resolve_cimd(
     hostname = urlparse(client_id).hostname
 
     if not hostname or not _public_host(hostname):
-        raise ValueError(
-            "client metadata host is not publicly routable"
-        )
+        raise ValueError("client metadata host is not publicly routable")
 
     now = time.monotonic()
 
@@ -155,43 +150,27 @@ async def _resolve_cimd(
         response = await client.get(client_id)
 
     if response.status_code != 200:
-        raise ValueError(
-            "client metadata document unavailable"
-        )
+        raise ValueError("client metadata document unavailable")
 
     if len(response.content) > _MAX_BYTES:
-        raise ValueError(
-            "client metadata document too large"
-        )
+        raise ValueError("client metadata document too large")
 
-    content_type = (
-        response.headers
-        .get("content-type", "")
-        .split(";", 1)[0]
-        .strip()
-        .lower()
-    )
+    content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
 
     if content_type not in {
         "application/json",
         "application/jrd+json",
         "text/json",
     }:
-        raise ValueError(
-            "client metadata document must be JSON"
-        )
+        raise ValueError("client metadata document must be JSON")
 
     try:
         data = response.json()
     except (ValueError, json.JSONDecodeError) as exc:
-        raise ValueError(
-            "client metadata document is invalid JSON"
-        ) from exc
+        raise ValueError("client metadata document is invalid JSON") from exc
 
     if not isinstance(data, dict):
-        raise ValueError(
-            "client metadata document must be an object"
-        )
+        raise ValueError("client metadata document must be an object")
 
     registered = _client_from_metadata(
         client_id,
@@ -235,18 +214,11 @@ async def _validate_client_with_cimd(
         if client is None:
             raise original_error
 
-        if (
-            redirect_uri is not None
-            and redirect_uri not in client.redirect_uris
-        ):
-            raise ValueError(
-                "redirect_uri is not registered for this client"
-            )
+        if redirect_uri is not None and redirect_uri not in client.redirect_uris:
+            raise ValueError("redirect_uri is not registered for this client")
 
         if client.token_endpoint_auth_method != "none":
-            raise ValueError(
-                "CIMD clients must use token_endpoint_auth_method=none"
-            )
+            raise ValueError("CIMD clients must use token_endpoint_auth_method=none")
 
         return client
 
@@ -260,8 +232,6 @@ def install() -> None:
     ):
         return
 
-    OAuthStore.validate_client = (
-        _validate_client_with_cimd
-    )
+    OAuthStore.validate_client = _validate_client_with_cimd
 
     OAuthStore._loystar_cimd_installed = True

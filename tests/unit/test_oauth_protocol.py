@@ -96,9 +96,11 @@ def test_get_mcp_challenges_before_transport_negotiation():
 
 def test_authorize_accepts_consent_and_defaults_resource(monkeypatch):
     verifier = "a-secure-pkce-verifier-that-is-long-enough-1234567890"
-    challenge = base64.urlsafe_b64encode(
-        hashlib.sha256(verifier.encode("ascii")).digest()
-    ).decode("ascii").rstrip("=")
+    challenge = (
+        base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest())
+        .decode("ascii")
+        .rstrip("=")
+    )
     with TestClient(app) as client:
         registration = client.post(
             "/oauth/register",

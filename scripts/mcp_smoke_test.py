@@ -7,6 +7,7 @@ Usage:
 If you already have an OAuth access token:
   python scripts/mcp_smoke_test.py --base-url https://... --access-token "$TOKEN"
 """
+
 from __future__ import annotations
 
 import argparse
@@ -16,13 +17,20 @@ import urllib.error
 import urllib.request
 
 
-def request_json(url: str, *, method: str = "GET", body: dict | None = None, headers: dict | None = None):
+def request_json(
+    url: str, *, method: str = "GET", body: dict | None = None, headers: dict | None = None
+):
     data = None if body is None else json.dumps(body).encode()
-    req = urllib.request.Request(url, data=data, method=method, headers={
-        "Accept": "application/json",
-        **({"Content-Type": "application/json"} if body is not None else {}),
-        **(headers or {}),
-    })
+    req = urllib.request.Request(
+        url,
+        data=data,
+        method=method,
+        headers={
+            "Accept": "application/json",
+            **({"Content-Type": "application/json"} if body is not None else {}),
+            **(headers or {}),
+        },
+    )
     with urllib.request.urlopen(req, timeout=20) as response:
         return response.status, dict(response.headers), json.loads(response.read())
 
@@ -43,17 +51,32 @@ def main() -> int:
         ("health", f"{base}/health", "GET", None),
         ("protected-resource", f"{base}/.well-known/oauth-protected-resource", "GET", None),
         ("authorization-server", f"{base}/.well-known/oauth-authorization-server", "GET", None),
-        ("initialize", f"{base}/mcp", "POST", {
-            "jsonrpc": "2.0", "id": 1, "method": "initialize",
-            "params": {
-                "protocolVersion": "2025-11-25",
-                "capabilities": {},
-                "clientInfo": {"name": "loystar-smoke-test", "version": "1.0.0"},
+        (
+            "initialize",
+            f"{base}/mcp",
+            "POST",
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-11-25",
+                    "capabilities": {},
+                    "clientInfo": {"name": "loystar-smoke-test", "version": "1.0.0"},
+                },
             },
-        }),
-        ("tools-list", f"{base}/mcp", "POST", {
-            "jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {},
-        }),
+        ),
+        (
+            "tools-list",
+            f"{base}/mcp",
+            "POST",
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/list",
+                "params": {},
+            },
+        ),
     ]
 
     for name, url, method, body in checks:
@@ -105,7 +128,9 @@ def main() -> int:
             f"{base}/mcp",
             method="POST",
             body={
-                "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
                 "params": {"name": "loystar_auth_status", "arguments": {}},
             },
             headers={

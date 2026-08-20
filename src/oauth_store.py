@@ -3,6 +3,7 @@
 Production mode uses PostgreSQL and fails closed. Development mode may use the
 in-memory backend for tests and local demos.
 """
+
 from __future__ import annotations
 
 import base64
@@ -183,7 +184,10 @@ class OAuthStore:
             raise ValueError("only response_type=code is supported")
         if token_endpoint_auth_method not in {"none", "client_secret_post", "client_secret_basic"}:
             raise ValueError("unsupported token endpoint authentication method")
-        if token_endpoint_auth_method in {"client_secret_post", "client_secret_basic"} and not client_secret:
+        if (
+            token_endpoint_auth_method in {"client_secret_post", "client_secret_basic"}
+            and not client_secret
+        ):
             client_secret = secrets.token_urlsafe(48)
 
         final_client_id = client_id or f"loy_client_{secrets.token_urlsafe(24)}"
@@ -253,9 +257,7 @@ class OAuthStore:
                 redirect_uris=[str(uri) for uri in client["redirect_uris"]],
                 grant_types=client.get("grant_types"),
                 response_types=client.get("response_types"),
-                token_endpoint_auth_method=str(
-                    client.get("token_endpoint_auth_method", "none")
-                ),
+                token_endpoint_auth_method=str(client.get("token_endpoint_auth_method", "none")),
                 client_secret=client.get("client_secret"),
             )
 
@@ -298,9 +300,7 @@ class OAuthStore:
         if client.token_endpoint_auth_method in ("client_secret_post", "client_secret_basic"):
             if not client_secret or not client.client_secret_hash:
                 raise ValueError("client authentication failed")
-            if not secrets.compare_digest(
-                _hash_secret(client_secret), client.client_secret_hash
-            ):
+            if not secrets.compare_digest(_hash_secret(client_secret), client.client_secret_hash):
                 raise ValueError("client authentication failed")
         return client
 
@@ -379,15 +379,11 @@ class OAuthStore:
         include_refresh = "offline_access" in scope.split()
         return OAuthSession(
             access_token=f"loy_at_{secrets.token_urlsafe(40)}",
-            refresh_token=(
-                f"loy_rt_{secrets.token_urlsafe(48)}" if include_refresh else None
-            ),
+            refresh_token=(f"loy_rt_{secrets.token_urlsafe(48)}" if include_refresh else None),
             credentials=credentials,
             merchant_uid=credentials.uid,
             expires_at=_now() + self.token_ttl,
-            refresh_expires_at=(
-                _now() + self.refresh_token_ttl if include_refresh else None
-            ),
+            refresh_expires_at=(_now() + self.refresh_token_ttl if include_refresh else None),
             scope=scope,
             client_id=client_id,
             resource=resource,
@@ -457,13 +453,9 @@ class OAuthStore:
                     raise ValueError("PKCE verification failed")
                 credentials = self._decrypt_credentials(pending.encrypted_credentials)
                 await db.execute(
-                    delete(OAuthAuthorizationCode).where(
-                        OAuthAuthorizationCode.id == pending.id
-                    )
+                    delete(OAuthAuthorizationCode).where(OAuthAuthorizationCode.id == pending.id)
                 )
-                session = self._new_session(
-                    credentials, client_id, resource, pending.scope
-                )
+                session = self._new_session(credentials, client_id, resource, pending.scope)
                 self._add_db_session(db, session)
                 return session
 
@@ -476,9 +468,7 @@ class OAuthStore:
             raise ValueError("resource does not match authorization request")
         if not self._verify_pkce(pending.code_challenge, code_verifier):
             raise ValueError("PKCE verification failed")
-        session = self._new_session(
-            pending.credentials, client_id, resource, pending.scope
-        )
+        session = self._new_session(pending.credentials, client_id, resource, pending.scope)
         self._store_memory_session(session)
         return session
 
@@ -516,9 +506,7 @@ class OAuthStore:
                     raise ValueError("refresh token binding failed")
                 credentials = self._decrypt_credentials(record.encrypted_credentials)
                 record.revoked_at = _now()
-                session = self._new_session(
-                    credentials, client_id, resource, record.scope
-                )
+                session = self._new_session(credentials, client_id, resource, record.scope)
                 self._add_db_session(db, session)
                 return session
 
@@ -532,9 +520,7 @@ class OAuthStore:
         if old_session.client_id != client_id or old_session.resource != resource:
             raise ValueError("refresh token binding failed")
         self._tokens.pop(_hash_secret(old_session.access_token), None)
-        session = self._new_session(
-            old_session.credentials, client_id, resource, old_session.scope
-        )
+        session = self._new_session(old_session.credentials, client_id, resource, old_session.scope)
         self._store_memory_session(session)
         return session
 
@@ -558,9 +544,7 @@ class OAuthStore:
             if expected_resource:
                 conditions.append(OAuthAccessToken.resource == expected_resource)
             async with get_db_context() as db:
-                result = await db.execute(
-                    select(OAuthAccessToken).where(*conditions)
-                )
+                result = await db.execute(select(OAuthAccessToken).where(*conditions))
                 record = result.scalar_one_or_none()
                 if not record:
                     return None
@@ -630,9 +614,7 @@ class OAuthStore:
 
             async with get_db_context() as db:
                 await db.execute(
-                    delete(OAuthAuthorizationCode).where(
-                        OAuthAuthorizationCode.expires_at <= now
-                    )
+                    delete(OAuthAuthorizationCode).where(OAuthAuthorizationCode.expires_at <= now)
                 )
                 await db.execute(
                     delete(OAuthAccessToken).where(
@@ -642,12 +624,8 @@ class OAuthStore:
                 )
             return
 
-        self._codes = {
-            key: value for key, value in self._codes.items() if value.expires_at > now
-        }
-        self._tokens = {
-            key: value for key, value in self._tokens.items() if value.expires_at > now
-        }
+        self._codes = {key: value for key, value in self._codes.items() if value.expires_at > now}
+        self._tokens = {key: value for key, value in self._tokens.items() if value.expires_at > now}
         self._refresh_tokens = {
             key: value
             for key, value in self._refresh_tokens.items()

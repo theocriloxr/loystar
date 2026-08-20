@@ -1,4 +1,5 @@
 """Configuration management for the Loystar MCP server."""
+
 from __future__ import annotations
 
 import json
@@ -25,9 +26,7 @@ class Settings(BaseSettings):
     server_host: str = Field(default="127.0.0.1", alias="MCP_SERVER_HOST")
     server_port: int = Field(default=8000, alias="MCP_SERVER_PORT")
     server_base_url: str = Field(default="http://localhost:8000", alias="MCP_SERVER_BASE_URL")
-    allowed_hosts_csv: str = Field(
-        default="localhost,127.0.0.1,testserver", alias="ALLOWED_HOSTS"
-    )
+    allowed_hosts_csv: str = Field(default="localhost,127.0.0.1,testserver", alias="ALLOWED_HOSTS")
     allowed_origins_csv: str = Field(
         default="http://localhost:8000,http://127.0.0.1:8000",
         alias="ALLOWED_ORIGINS",
@@ -60,9 +59,7 @@ class Settings(BaseSettings):
     loystar_timeout_seconds: float = Field(default=20.0, alias="LOYSTAR_TIMEOUT_SECONDS")
     loystar_redact_pii: bool = Field(default=True, alias="LOYSTAR_REDACT_PII")
     allow_request_pii_override: bool = Field(default=False, alias="ALLOW_REQUEST_PII_OVERRIDE")
-    allow_environment_credentials: bool = Field(
-        default=True, alias="ALLOW_ENVIRONMENT_CREDENTIALS"
-    )
+    allow_environment_credentials: bool = Field(default=True, alias="ALLOW_ENVIRONMENT_CREDENTIALS")
 
     # OAuth 2.1 / MCP authorization
     oauth_issuer: Optional[str] = Field(default=None, alias="OAUTH_ISSUER")
@@ -108,19 +105,13 @@ class Settings(BaseSettings):
         default="http://localhost:8000/api/v1/hitl/approve",
         alias="HITL_APPROVAL_WEBHOOK_URL",
     )
-    hitl_auto_approve_threshold: float = Field(
-        default=100.0, alias="HITL_AUTO_APPROVE_THRESHOLD"
-    )
-    hitl_campaign_size_threshold: int = Field(
-        default=50, alias="HITL_CAMPAIGN_SIZE_THRESHOLD"
-    )
+    hitl_auto_approve_threshold: float = Field(default=100.0, alias="HITL_AUTO_APPROVE_THRESHOLD")
+    hitl_campaign_size_threshold: int = Field(default=50, alias="HITL_CAMPAIGN_SIZE_THRESHOLD")
 
     # Reserved AI/vector configuration
     pinecone_api_key: Optional[str] = Field(default=None, alias="PINECONE_API_KEY")
     pinecone_environment: str = Field(default="us-west1", alias="PINECONE_ENVIRONMENT")
-    pinecone_index_name: str = Field(
-        default="loystar_memories", alias="PINECONE_INDEX_NAME"
-    )
+    pinecone_index_name: str = Field(default="loystar_memories", alias="PINECONE_INDEX_NAME")
     ai_provider: str = Field(default="", alias="AI_PROVIDER")
     gemini_api_key: Optional[str] = Field(default=None, alias="GEMINI_API_KEY")
     openai_api_key: Optional[str] = Field(default=None, alias="OPENAI_API_KEY")
@@ -260,13 +251,8 @@ class Settings(BaseSettings):
                 not self.connector_api_key or len(self.connector_api_key) < 32
             ):
                 errors.append("CONNECTOR_API_KEY must contain at least 32 characters")
-            if (
-                not self.oauth_allow_dynamic_registration
-                and not self.oauth_static_clients
-            ):
-                errors.append(
-                    "configure OAUTH_STATIC_CLIENTS_JSON or enable dynamic registration"
-                )
+            if not self.oauth_allow_dynamic_registration and not self.oauth_static_clients:
+                errors.append("configure OAUTH_STATIC_CLIENTS_JSON or enable dynamic registration")
 
         # Parse and validate static-client configuration even in development.
         for client in self.oauth_static_clients:
