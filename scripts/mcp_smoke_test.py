@@ -2,10 +2,10 @@
 """Small dependency-light smoke test for a deployed Loystar MCP server.
 
 Usage:
-  python scripts/mcp_smoke_test.py https://your-domain.up.railway.app
+  python scripts/mcp_smoke_test.py --base-url https://your-domain.up.railway.app
 
 If you already have an OAuth access token:
-  python scripts/mcp_smoke_test.py https://... --token "$TOKEN"
+  python scripts/mcp_smoke_test.py --base-url https://... --access-token "$TOKEN"
 """
 from __future__ import annotations
 
@@ -29,10 +29,14 @@ def request_json(url: str, *, method: str = "GET", body: dict | None = None, hea
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("base_url")
-    parser.add_argument("--token")
+    parser.add_argument("base_url_positional", nargs="?")
+    parser.add_argument("--base-url")
+    parser.add_argument("--access-token", "--token", dest="token")
     args = parser.parse_args()
-    base = args.base_url.rstrip("/")
+    supplied_base = args.base_url or args.base_url_positional
+    if not supplied_base:
+        parser.error("provide --base-url")
+    base = supplied_base.rstrip("/")
 
     checks = [
         ("live", f"{base}/live", "GET", None),
@@ -60,14 +64,20 @@ def main() -> int:
                 body=body,
                 headers=(
                     {"Authorization": f"Bearer {args.token}", "MCP-Protocol-Version": "2025-11-25"}
-                    if args.token and name == "tools-list"
+                    if args.token and name in {"initialize", "tools-list"}
                     else {}
                 ),
             )
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode(errors="replace")
-            if name == "tools-list" and not args.token and exc.code == 401:
-                print("[PASS] tools-list is protected and advertises OAuth")
+            if name == "initialize" and not args.token and exc.code == 401:
+                challenge = exc.headers.get("WWW-Authenticate", "")
+                if "resource_metadata=" not in challenge:
+                    print("[FAIL] initialize: OAuth challenge lacks resource metadata")
+                    return 1
+                print("[PASS] MCP unauthenticated challenge advertises OAuth")
+                continue
+            if name == "tools-list" and not args.token:
                 continue
             print(f"[FAIL] {name}: HTTP {exc.code} {detail}")
             return 1
@@ -76,10 +86,6 @@ def main() -> int:
             return 1
 
         if name == "tools-list" and not args.token:
-            if status != 401:
-                print(f"[FAIL] {name}: expected 401 before OAuth, got {status}")
-                return 1
-            print("[PASS] tools-list is protected and advertises OAuth")
             continue
 
         if status != 200:

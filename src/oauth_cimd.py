@@ -106,14 +106,8 @@ def _client_from_metadata(
     if not isinstance(responses, list) or set(responses) != {"code"}:
         raise ValueError("unsupported response_types")
 
-    if auth_method not in {
-        "none",
-        "client_secret_post",
-        "client_secret_basic",
-    }:
-        raise ValueError(
-            "unsupported token_endpoint_auth_method"
-        )
+    if auth_method != "none":
+        raise ValueError("CIMD clients must use token_endpoint_auth_method=none")
 
     return RegisteredClient(
         client_id=client_id,

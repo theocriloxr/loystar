@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -246,7 +247,7 @@ def require_prototype_admin(request: Request) -> None:
 
 def external_base_url(request: Request) -> str:
     """Return the public base URL AI hosts should use for OAuth discovery."""
-    configured = settings.server_base_url.rstrip("/")
+    configured = settings.canonical_server_origin
     if configured and "localhost" not in configured and "127.0.0.1" not in configured:
         return configured
     return str(request.base_url).rstrip("/")
@@ -278,20 +279,9 @@ def oauth_error(
 def validate_oauth_resource(resource: str, request: Optional[Request] = None) -> str:
     if not resource:
         return settings.canonical_mcp_resource
-    # Accept the configured canonical resource
     if resource == settings.canonical_mcp_resource:
         return resource
-    # Also accept a resource derived from the actual incoming request host
-    # (handles cases where MCP_SERVER_BASE_URL isn't configured in Railway)
-    if request is not None:
-        request_base = str(request.base_url).rstrip("/")
-        if resource == f"{request_base}/mcp":
-            return resource
-    # If resource ends with /mcp and the hostname matches, accept it
-    # This handles Railway deployments where the URL is known but base_url config is missing
-    if resource.endswith("/mcp"):
-        return resource
-    raise ValueError(f"resource must identify this MCP server (got: {resource}, expected: {settings.canonical_mcp_resource})")
+    raise ValueError("resource must identify this MCP server")
 
 
 def credentials_from_sign_in(result: Dict[str, Any]) -> LoystarCredentials:
@@ -368,6 +358,25 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_error(request: Request, exc: RequestValidationError):
+    """Return protocol-shaped parse/validation errors on the MCP endpoint."""
+    if request.url.path != "/mcp":
+        return JSONResponse(status_code=422, content={"detail": exc.errors()})
+    parse_error = any(error.get("type") == "json_invalid" for error in exc.errors())
+    return JSONResponse(
+        status_code=400,
+        content={
+            "jsonrpc": "2.0",
+            "id": None,
+            "error": {
+                "code": -32700 if parse_error else -32600,
+                "message": "Parse error" if parse_error else "Invalid Request",
+            },
+        },
+    )
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
@@ -415,27 +424,17 @@ async def root():
     return result
 
 
-@app.post("/")
-async def root_post(request: Request):
-    """Redirect MCP JSON-RPC POSTs sent to root (/) to the correct /mcp endpoint."""
-    return JSONResponse(
-        status_code=308,
-        content={"detail": "MCP endpoint is at /mcp. Use POST /mcp for JSON-RPC requests."},
-        headers={"Location": "/mcp"},
-    )
-
-
 @app.get("/.well-known/oauth-protected-resource")
 @app.get("/.well-known/oauth-protected-resource/mcp")
 async def oauth_protected_resource_metadata(request: Request):
     """RFC 9728 metadata for the protected MCP resource."""
     issuer = oauth_issuer(request)
-    return {
+    return JSONResponse(content={
         "resource": settings.canonical_mcp_resource,
         "authorization_servers": [issuer],
         "scopes_supported": ["loystar.read", "offline_access"],
         "bearer_methods_supported": ["header"],
-    }
+    }, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/.well-known/oauth-authorization-server")
@@ -456,9 +455,9 @@ async def oauth_authorization_server_metadata(request: Request):
     if settings.oauth_allow_dynamic_registration:
         metadata["registration_endpoint"] = f"{issuer}/oauth/register"
 
-    metadata["client_id_metadata_document_supported"] = False
+    metadata["client_id_metadata_document_supported"] = settings.oauth_enable_cimd
 
-    return metadata
+    return JSONResponse(content=metadata, headers={"Cache-Control": "no-store"})
 
 @app.post("/oauth/register")
 async def oauth_register(
@@ -502,6 +501,7 @@ async def oauth_authorize_page(
     code_challenge: str = "",
     code_challenge_method: str = "S256",
     resource: str = "",
+    prompt: Optional[str] = None,
 ):
     """Render a Loystar merchant login page for AI-host OAuth linking."""
     await enforce_oauth_rate_limit(request)
@@ -512,6 +512,8 @@ async def oauth_authorize_page(
             client_id, redirect_uri
         )
         normalize_scope(scope)
+        if prompt not in {None, "", "consent"}:
+            raise ValueError("unsupported prompt value")
         resource = validate_oauth_resource(resource, request)
         if code_challenge_method != "S256" or not 43 <= len(code_challenge) <= 128:
             raise ValueError("S256 PKCE is required")
@@ -1022,30 +1024,14 @@ async def mcp_get(request: Request):
     - Plain GET (e.g. a browser or Claude probing the URL) → 200 JSON describing the server.
     - GET with Accept: text/event-stream → legacy SSE stream (only when enable_legacy_routes is on).
     """
-    accept = request.headers.get("accept", "")
-    if "text/event-stream" in accept:
-        require_feature(settings.enable_legacy_routes)
-        await enforce_connector_controls(request)
-
-        async def event_stream():
-            endpoint = {"endpoint": "/mcp/rpc", "transport": "http-json-rpc"}
-            yield f"event: endpoint\ndata: {json.dumps(endpoint)}\n\n"
-            while True:
-                if await request.is_disconnected():
-                    break
-                yield f"event: ping\ndata: {json.dumps({'timestamp': datetime.now(timezone.utc).isoformat()})}\n\n"
-                await asyncio.sleep(15)
-
-        return StreamingResponse(event_stream(), media_type="text/event-stream")
-
-    # Plain GET — return discovery info so clients know this is a valid MCP endpoint
-    return JSONResponse({
-        "name": "Loystar MCP Server",
-        "version": "1.0.0",
-        "transport": "streamable-http",
-        "mcp_endpoint": "/mcp",
-        "note": "Send JSON-RPC 2.0 POST requests to this URL.",
-    })
+    credentials = await extract_loystar_credentials(request)
+    if not credentials:
+        return JSONResponse(
+            status_code=401,
+            headers={"WWW-Authenticate": bearer_challenge(request)},
+            content={"detail": "Authentication required."},
+        )
+    return Response(status_code=405, headers={"Allow": "POST"})
 
 
 @app.post("/mcp")
@@ -1068,11 +1054,9 @@ async def mcp_streamable_http(request: JsonRpcRequest, http_request: Request):
     tool_name = request.params.get("name") if request.method == "tools/call" else request.method
     credentials = await extract_loystar_credentials(http_request)
 
-    public_methods = {"initialize", "notifications/initialized", "ping"}
     if (
         not credentials
         and not LoystarClient().is_configured()
-        and request.method not in public_methods
     ):
         await http_request.app.state.audit_log.record(http_request, tool_name, "error", "oauth_required")
         return JSONResponse(

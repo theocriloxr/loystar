@@ -394,9 +394,8 @@ def test_streamable_mcp_initialize_and_tools_list():
                 },
             },
         )
-        assert initialize.status_code == 200
-        assert initialize.headers["mcp-protocol-version"] == "2025-11-25"
-        assert initialize.json()["result"]["serverInfo"]["name"] == "Loystar MCP Server"
+        assert initialize.status_code == 401
+        assert "resource_metadata=" in initialize.headers["www-authenticate"]
 
         tools = client.post(
             "/mcp",

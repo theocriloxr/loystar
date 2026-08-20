@@ -67,7 +67,7 @@ class Settings(BaseSettings):
     # OAuth 2.1 / MCP authorization
     oauth_issuer: Optional[str] = Field(default=None, alias="OAUTH_ISSUER")
     oauth_code_ttl_seconds: int = Field(default=300, alias="OAUTH_CODE_TTL_SECONDS")
-    oauth_token_ttl_seconds: int = Field(default=900, alias="OAUTH_TOKEN_TTL_SECONDS")
+    oauth_token_ttl_seconds: int = Field(default=3600, alias="OAUTH_TOKEN_TTL_SECONDS")
     oauth_refresh_token_ttl_seconds: int = Field(
         default=2_592_000, alias="OAUTH_REFRESH_TOKEN_TTL_SECONDS"
     )
@@ -75,6 +75,7 @@ class Settings(BaseSettings):
     oauth_allow_dynamic_registration: bool = Field(
         default=True, alias="OAUTH_ALLOW_DYNAMIC_REGISTRATION"
     )
+    oauth_enable_cimd: bool = Field(default=True, alias="OAUTH_ENABLE_CIMD")
     oauth_dcr_initial_access_token: Optional[str] = Field(
         default=None, alias="OAUTH_DCR_INITIAL_ACCESS_TOKEN"
     )
@@ -168,7 +169,16 @@ class Settings(BaseSettings):
 
     @property
     def canonical_mcp_resource(self) -> str:
-        return f"{self.server_base_url.rstrip('/')}/mcp"
+        return f"{self.canonical_server_origin}/mcp"
+
+    @property
+    def canonical_server_origin(self) -> str:
+        """Return the configured origin with scheme and host case normalized."""
+        parsed = urlparse(self.server_base_url.strip())
+        scheme = parsed.scheme.lower()
+        host = (parsed.hostname or "").lower()
+        port = f":{parsed.port}" if parsed.port else ""
+        return f"{scheme}://{host}{port}"
 
     def validate_for_startup(self) -> None:
         """Fail closed when a production deployment is missing required controls."""
@@ -194,9 +204,16 @@ class Settings(BaseSettings):
 
         if self.is_production:
             parsed_base_url = urlparse(self.server_base_url)
-            if parsed_base_url.scheme != "https":
+            if parsed_base_url.scheme.lower() != "https":
                 errors.append("MCP_SERVER_BASE_URL must use HTTPS in production")
-            if not parsed_base_url.hostname or parsed_base_url.path not in {"", "/"}:
+            if (
+                not parsed_base_url.hostname
+                or parsed_base_url.path not in {"", "/"}
+                or parsed_base_url.username
+                or parsed_base_url.password
+                or parsed_base_url.query
+                or parsed_base_url.fragment
+            ):
                 errors.append("MCP_SERVER_BASE_URL must be an HTTPS origin without a path")
             if self.oauth_issuer and urlparse(self.oauth_issuer).scheme != "https":
                 errors.append("OAUTH_ISSUER must use HTTPS in production")
