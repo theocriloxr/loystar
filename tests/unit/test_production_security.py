@@ -131,9 +131,8 @@ def test_mcp_notification_returns_accepted():
             },
         )
 
-    assert response.status_code == 202
-    assert response.headers["mcp-protocol-version"] == "2025-11-25"
-    assert response.content == b""
+    assert response.status_code == 401
+    assert "resource_metadata=" in response.headers["www-authenticate"]
 
 
 def test_mcp_rejects_non_json_content_type():
@@ -145,6 +144,18 @@ def test_mcp_rejects_non_json_content_type():
         )
 
     assert response.status_code == 415
+
+
+def test_mcp_rejects_malformed_json_with_jsonrpc_parse_error():
+    with TestClient(app) as client:
+        response = client.post(
+            "/mcp",
+            content="{not-json",
+            headers={"content-type": "application/json"},
+        )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == -32700
 
 
 def test_raw_pii_override_is_not_advertised_by_default(monkeypatch):

@@ -141,9 +141,10 @@ Production startup stops with an error if these values are unsafe. Shared `LOYST
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `OAUTH_CODE_TTL_SECONDS` | `300` | One-time authorization-code lifetime |
-| `OAUTH_TOKEN_TTL_SECONDS` | `900` | Access-token lifetime |
+| `OAUTH_TOKEN_TTL_SECONDS` | `3600` | Access-token lifetime |
 | `OAUTH_REFRESH_TOKEN_TTL_SECONDS` | `2592000` | Rotating refresh-token lifetime |
 | `OAUTH_ALLOW_DYNAMIC_REGISTRATION` | `true` | Lets compatible MCP hosts register their callback URI |
+| `OAUTH_ENABLE_CIMD` | `true` | Enables validated HTTPS Client ID Metadata Documents for modern MCP clients |
 | `OAUTH_DCR_INITIAL_ACCESS_TOKEN` | empty | Optional protection for private DCR; many public AI clients cannot supply it |
 | `OAUTH_STATIC_CLIENTS_JSON` | `[]` | Pre-registered clients when dynamic registration is disabled |
 
@@ -284,13 +285,18 @@ The development-only demo, legacy MCP helpers, billing, prototype resources, and
 
 ## Manual MCP check
 
-Initialization does not require merchant authorization:
+Every MCP request, including initialization, requires merchant authorization. An
+unauthenticated request returns `401` with RFC 9728 protected-resource metadata:
 
 ```bash
 curl -X POST https://loystar-mcp.example.com/mcp \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"manual-check","version":"1.0"}}}'
 ```
+
+That command is expected to return `401` until an OAuth bearer token is added.
+This early challenge lets ChatGPT and Claude begin discovery before treating the
+MCP connection as initialized.
 
 Data tools require an OAuth access token issued for the exact MCP resource:
 

@@ -19,8 +19,8 @@ Any AI client that supports remote MCP — ChatGPT, Claude Code, Cursor, Windsur
 
 1. Merchant opens their AI system (chatgpt.com, claude.ai, etc.)
 2. They add the Loystar MCP server URL
-3. The AI host discovers Loystar tools from `/mcp`
-4. When the AI needs private merchant data, the host starts OAuth
+3. The protected `/mcp` endpoint challenges the host and starts OAuth discovery
+4. After OAuth completes, the AI host initializes MCP and discovers Loystar tools
 5. Merchant sees the Loystar login page (served by this server)
 6. Merchant enters their Loystar email/password
 7. Server exchanges login for Loystar session headers
@@ -115,18 +115,21 @@ POST https://YOUR_PUBLIC_DOMAIN/oauth/token
 ## MCP Protocol Flow
 
 ```
-1. Client sends initialize:
+1. Client sends initialize without a token and receives an OAuth challenge:
+   â† 401 WWW-Authenticate: Bearer resource_metadata="...", scope="loystar.read"
+
+2. After OAuth, client sends authenticated initialize:
    → {"jsonrpc":"2.0","id":1,"method":"initialize",...}
    ← {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26",...}}
 
-2. Client sends initialized notification:
+3. Client sends initialized notification:
    → {"jsonrpc":"2.0","method":"notifications/initialized"}
 
-3. Client discovers tools:
+4. Client discovers tools:
    → {"jsonrpc":"2.0","id":2,"method":"tools/list"}
    ← {"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"loystar_get_customers",...}]}}
 
-4. Client calls a tool:
+5. Client calls a tool:
    → {"jsonrpc":"2.0","id":3,"method":"tools/call",
       "params":{"name":"loystar_get_sales","arguments":{"page_number":1,"page_size":10}}}
    ← {"jsonrpc":"2.0","id":3,"result":{"source":"loystar_api","data":{...}}}
@@ -204,11 +207,17 @@ The AI maps natural language to the appropriate Loystar tool automatically.
 
 ## Production Notes
 
-- Replace in-memory OAuth store with durable encrypted storage for production
-- Use HTTPS everywhere (Railway provides auto-HTTPS)
-- Set `JWT_SECRET_KEY` to a strong random value
-- Enable `REQUIRE_CONNECTOR_AUTH=true` with a strong API key
-- Configure rate limiting for production traffic
-- Set up audit log alerts for suspicious activity
-- Keep `LOYSTAR_REDACT_PII=true` unless explicitly required otherwise
-- Log all OAuth events (login, token exchange, token revocation)
+- Production requires PostgreSQL-backed OAuth state and AES-256-GCM encrypted Loystar sessions.
+- Use HTTPS everywhere and set the exact canonical origin in both `MCP_SERVER_BASE_URL` and `OAUTH_ISSUER`.
+- Keep `REQUIRE_CONNECTOR_AUTH=false` for normal ChatGPT/Claude OAuth connections.
+- Keep `ALLOW_ENVIRONMENT_CREDENTIALS=false`; each token is bound to one merchant session.
+- DCR and validated CIMD are both supported; redirect URIs always match exactly.
+- Refresh tokens rotate, and reuse of the previous token is rejected.
+- Keep `LOYSTAR_REDACT_PII=true` and never log OAuth or Loystar credentials.
+
+To reconnect after a deployment or upstream Loystar-session expiry, remove or
+disconnect the Loystar MCP entry in the AI client's connector settings, add
+`https://loystar-production.up.railway.app/mcp` again, and complete the Loystar
+login/consent screen. A `400` from `/oauth/authorize` indicates invalid client,
+redirect, scope, PKCE, prompt, or resource parameters; a `401` from `/mcp` is the
+expected pre-authentication discovery challenge.

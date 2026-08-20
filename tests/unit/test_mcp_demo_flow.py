@@ -99,9 +99,7 @@ def test_fastapi_demo_endpoints(monkeypatch):
         assert tools.status_code == 200
         assert len(tools.json()["tools"]) >= 5
 
-        profile = client.get(
-            "/api/v1/customers/cust_demo/profile", headers=admin_headers
-        )
+        profile = client.get("/api/v1/customers/cust_demo/profile", headers=admin_headers)
         assert profile.status_code == 200
         assert profile.json()["content"]["customer_id"] == "cust_demo"
 
@@ -216,9 +214,11 @@ def test_oauth_linking_flow_issues_bearer_token_for_remote_mcp(monkeypatch):
     monkeypatch.setattr("src.main.LoystarClient.sign_in", fake_sign_in)
 
     verifier = "correct-horse-battery-staple-verifier-0123456789"
-    challenge = base64.urlsafe_b64encode(
-        hashlib.sha256(verifier.encode("ascii")).digest()
-    ).decode("ascii").rstrip("=")
+    challenge = (
+        base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest())
+        .decode("ascii")
+        .rstrip("=")
+    )
     resource = settings.canonical_mcp_resource
     redirect_uri = "https://ai.example.com/oauth/callback"
 
@@ -369,8 +369,6 @@ def test_rate_limiter_rejects_after_configured_limit(monkeypatch):
     assert second.status_code == 429
 
 
-
-
 def test_health_uses_initialized_rate_limiter():
     with TestClient(app) as client:
         response = client.get("/health")
@@ -394,9 +392,8 @@ def test_streamable_mcp_initialize_and_tools_list():
                 },
             },
         )
-        assert initialize.status_code == 200
-        assert initialize.headers["mcp-protocol-version"] == "2025-11-25"
-        assert initialize.json()["result"]["serverInfo"]["name"] == "Loystar MCP Server"
+        assert initialize.status_code == 401
+        assert "resource_metadata=" in initialize.headers["www-authenticate"]
 
         tools = client.post(
             "/mcp",

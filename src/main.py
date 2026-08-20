@@ -4,6 +4,7 @@ FastAPI Application for Loystar MCP Server
 This module provides the HTTP endpoints for the MCP server,
 including SSE transport and webhook handlers.
 """
+
 import asyncio
 import hashlib
 import hmac
@@ -15,6 +16,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -50,6 +52,7 @@ from src.billing import router as billing_router
 # Request/Response Models
 class ToolCallRequest(BaseModel):
     """Tool call request model"""
+
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(..., description="Name of the tool to call")
@@ -58,6 +61,7 @@ class ToolCallRequest(BaseModel):
 
 class ResourceReadRequest(BaseModel):
     """Resource read request model"""
+
     model_config = ConfigDict(extra="forbid")
 
     uri: str = Field(..., description="Resource URI to read")
@@ -65,6 +69,7 @@ class ResourceReadRequest(BaseModel):
 
 class JsonRpcRequest(BaseModel):
     """JSON-RPC 2.0 request body accepted by the HTTP transport."""
+
     model_config = ConfigDict(extra="forbid")
 
     jsonrpc: str = Field(default="2.0")
@@ -75,6 +80,7 @@ class JsonRpcRequest(BaseModel):
 
 class MessageSendRequest(BaseModel):
     """Message send request model"""
+
     model_config = ConfigDict(extra="forbid")
 
     customer_id: str = Field(..., description="Customer ID")
@@ -84,6 +90,7 @@ class MessageSendRequest(BaseModel):
 
 class CouponGenerateRequest(BaseModel):
     """Coupon generation request model"""
+
     model_config = ConfigDict(extra="forbid")
 
     customer_id: Optional[str] = Field(default=None, description="Customer ID")
@@ -97,6 +104,7 @@ class CouponGenerateRequest(BaseModel):
 
 class DemoChatRequest(BaseModel):
     """Natural-language demo request from the browser AI host."""
+
     model_config = ConfigDict(extra="forbid")
 
     message: str = Field(..., min_length=1, description="Merchant question")
@@ -105,6 +113,7 @@ class DemoChatRequest(BaseModel):
 
 class LoystarSignInRequest(BaseModel):
     """Demo token-exchange request for linking a Loystar merchant account."""
+
     model_config = ConfigDict(extra="forbid")
 
     email: str = Field(..., description="Loystar merchant email")
@@ -118,9 +127,7 @@ class OAuthClientRegistrationRequest(BaseModel):
 
     client_name: Optional[str] = Field(default="Unknown Client", max_length=255)
     redirect_uris: list[str] = Field(..., min_length=1, max_length=10)
-    grant_types: list[str] = Field(
-        default_factory=lambda: ["authorization_code", "refresh_token"]
-    )
+    grant_types: list[str] = Field(default_factory=lambda: ["authorization_code", "refresh_token"])
     response_types: list[str] = Field(default_factory=lambda: ["code"])
     token_endpoint_auth_method: str = Field(default="none")
 
@@ -163,6 +170,7 @@ async def extract_loystar_credentials(request: Request) -> Optional[LoystarCrede
 # Application State
 class AppState:
     """Application state management"""
+
     mcp_server: MCPServer
     active_connections: list
     oauth_store: OAuthStore
@@ -205,16 +213,16 @@ async def lifespan(app: FastAPI):
     )
     await app.state.rate_limiter.initialize()
     await app.state.oauth_rate_limiter.initialize()
-    
+
     print(f"Starting {app.state.mcp_server.server_name} v{app.state.mcp_server.version}")
     print(f"Server ready at {settings.server_base_url}")
     if use_durable_state:
         print("OAuth store: PostgreSQL (encrypted at rest via AES-256-GCM)")
     else:
         print("OAuth store: in-memory development mode")
-    
+
     yield
-    
+
     await app.state.rate_limiter.close()
     await app.state.oauth_rate_limiter.close()
     if use_durable_state:
@@ -246,7 +254,7 @@ def require_prototype_admin(request: Request) -> None:
 
 def external_base_url(request: Request) -> str:
     """Return the public base URL AI hosts should use for OAuth discovery."""
-    configured = settings.server_base_url.rstrip("/")
+    configured = settings.canonical_server_origin
     if configured and "localhost" not in configured and "127.0.0.1" not in configured:
         return configured
     return str(request.base_url).rstrip("/")
@@ -278,20 +286,9 @@ def oauth_error(
 def validate_oauth_resource(resource: str, request: Optional[Request] = None) -> str:
     if not resource:
         return settings.canonical_mcp_resource
-    # Accept the configured canonical resource
     if resource == settings.canonical_mcp_resource:
         return resource
-    # Also accept a resource derived from the actual incoming request host
-    # (handles cases where MCP_SERVER_BASE_URL isn't configured in Railway)
-    if request is not None:
-        request_base = str(request.base_url).rstrip("/")
-        if resource == f"{request_base}/mcp":
-            return resource
-    # If resource ends with /mcp and the hostname matches, accept it
-    # This handles Railway deployments where the URL is known but base_url config is missing
-    if resource.endswith("/mcp"):
-        return resource
-    raise ValueError(f"resource must identify this MCP server (got: {resource}, expected: {settings.canonical_mcp_resource})")
+    raise ValueError("resource must identify this MCP server")
 
 
 def credentials_from_sign_in(result: Dict[str, Any]) -> LoystarCredentials:
@@ -332,7 +329,10 @@ def choose_demo_tool(message: str) -> Dict[str, Any]:
     if "branch" in text or "location" in text:
         return {"name": "loystar_get_business_branches", "arguments": {}}
     if "invoice" in text or "unpaid" in text or "payment" in text:
-        return {"name": "loystar_get_invoices", "arguments": {"status": "unpaid" if "unpaid" in text else None}}
+        return {
+            "name": "loystar_get_invoices",
+            "arguments": {"status": "unpaid" if "unpaid" in text else None},
+        }
     if "sms" in text or "message credit" in text:
         return {"name": "loystar_get_sms_balance", "arguments": {}}
     if "subscription" in text or "plan" in text:
@@ -367,6 +367,26 @@ app = FastAPI(
     redoc_url=None if settings.is_production else "/redoc",
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_error(request: Request, exc: RequestValidationError):
+    """Return protocol-shaped parse/validation errors on the MCP endpoint."""
+    if request.url.path != "/mcp":
+        return JSONResponse(status_code=422, content={"detail": exc.errors()})
+    parse_error = any(error.get("type") == "json_invalid" for error in exc.errors())
+    return JSONResponse(
+        status_code=400,
+        content={
+            "jsonrpc": "2.0",
+            "id": None,
+            "error": {
+                "code": -32700 if parse_error else -32600,
+                "message": "Parse error" if parse_error else "Invalid Request",
+            },
+        },
+    )
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -415,27 +435,20 @@ async def root():
     return result
 
 
-@app.post("/")
-async def root_post(request: Request):
-    """Redirect MCP JSON-RPC POSTs sent to root (/) to the correct /mcp endpoint."""
-    return JSONResponse(
-        status_code=308,
-        content={"detail": "MCP endpoint is at /mcp. Use POST /mcp for JSON-RPC requests."},
-        headers={"Location": "/mcp"},
-    )
-
-
 @app.get("/.well-known/oauth-protected-resource")
 @app.get("/.well-known/oauth-protected-resource/mcp")
 async def oauth_protected_resource_metadata(request: Request):
     """RFC 9728 metadata for the protected MCP resource."""
     issuer = oauth_issuer(request)
-    return {
-        "resource": settings.canonical_mcp_resource,
-        "authorization_servers": [issuer],
-        "scopes_supported": ["loystar.read", "offline_access"],
-        "bearer_methods_supported": ["header"],
-    }
+    return JSONResponse(
+        content={
+            "resource": settings.canonical_mcp_resource,
+            "authorization_servers": [issuer],
+            "scopes_supported": ["loystar.read", "offline_access"],
+            "bearer_methods_supported": ["header"],
+        },
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.get("/.well-known/oauth-authorization-server")
@@ -451,14 +464,19 @@ async def oauth_authorization_server_metadata(request: Request):
         "grant_types_supported": ["authorization_code", "refresh_token"],
         "code_challenge_methods_supported": ["S256"],
         "scopes_supported": ["loystar.read", "offline_access"],
-        "token_endpoint_auth_methods_supported": ["none", "client_secret_post", "client_secret_basic"],
+        "token_endpoint_auth_methods_supported": [
+            "none",
+            "client_secret_post",
+            "client_secret_basic",
+        ],
     }
     if settings.oauth_allow_dynamic_registration:
         metadata["registration_endpoint"] = f"{issuer}/oauth/register"
 
-    metadata["client_id_metadata_document_supported"] = False
+    metadata["client_id_metadata_document_supported"] = settings.oauth_enable_cimd
 
-    return metadata
+    return JSONResponse(content=metadata, headers={"Cache-Control": "no-store"})
+
 
 @app.post("/oauth/register")
 async def oauth_register(
@@ -502,16 +520,17 @@ async def oauth_authorize_page(
     code_challenge: str = "",
     code_challenge_method: str = "S256",
     resource: str = "",
+    prompt: Optional[str] = None,
 ):
     """Render a Loystar merchant login page for AI-host OAuth linking."""
     await enforce_oauth_rate_limit(request)
     if response_type != "code":
         raise HTTPException(status_code=400, detail="Only response_type=code is supported")
     try:
-        client = await request.app.state.oauth_store.validate_client(
-            client_id, redirect_uri
-        )
+        client = await request.app.state.oauth_store.validate_client(client_id, redirect_uri)
         normalize_scope(scope)
+        if prompt not in {None, "", "consent"}:
+            raise ValueError("unsupported prompt value")
         resource = validate_oauth_resource(resource, request)
         if code_challenge_method != "S256" or not 43 <= len(code_challenge) <= 128:
             raise ValueError("S256 PKCE is required")
@@ -525,7 +544,9 @@ async def oauth_authorize_page(
                 "Client not found. Please reconnect the MCP server to re-register.",
                 400,
             )
-        raise HTTPException(status_code=400, detail=f"Invalid OAuth authorization request: {error_detail}")
+        raise HTTPException(
+            status_code=400, detail=f"Invalid OAuth authorization request: {error_detail}"
+        )
 
     hidden_fields = {
         "response_type": response_type,
@@ -651,6 +672,7 @@ async def oauth_token(request: Request):
         auth_header = request.headers.get("Authorization", "")
         if auth_header.lower().startswith("basic "):
             import base64
+
             try:
                 decoded = base64.b64decode(auth_header[6:]).decode("utf-8")
                 if ":" in decoded:
@@ -930,7 +952,9 @@ async def demo_chat(request: DemoChatRequest, http_request: Request):
             "tool_result": result,
         }
     except HTTPException:
-        await http_request.app.state.audit_log.record(http_request, tool_call["name"], "error", "connector_policy_rejected")
+        await http_request.app.state.audit_log.record(
+            http_request, tool_call["name"], "error", "connector_policy_rejected"
+        )
         raise
     except Exception as e:
         await http_request.app.state.audit_log.record(
@@ -978,7 +1002,7 @@ async def health_check(request: Request):
         "version": "1.0.0",
         "environment": settings.environment,
         "dependencies": dependencies,
-        "timestamp": datetime.now(timezone.utc).isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -1004,7 +1028,9 @@ async def loystar_sign_in(request: LoystarSignInRequest, http_request: Request):
         await http_request.app.state.audit_log.record(http_request, "loystar_sign_in", "success")
         return result
     except HTTPException:
-        await http_request.app.state.audit_log.record(http_request, "loystar_sign_in", "error", "connector_policy_rejected")
+        await http_request.app.state.audit_log.record(
+            http_request, "loystar_sign_in", "error", "connector_policy_rejected"
+        )
         raise
     except Exception as e:
         await http_request.app.state.audit_log.record(
@@ -1022,30 +1048,14 @@ async def mcp_get(request: Request):
     - Plain GET (e.g. a browser or Claude probing the URL) → 200 JSON describing the server.
     - GET with Accept: text/event-stream → legacy SSE stream (only when enable_legacy_routes is on).
     """
-    accept = request.headers.get("accept", "")
-    if "text/event-stream" in accept:
-        require_feature(settings.enable_legacy_routes)
-        await enforce_connector_controls(request)
-
-        async def event_stream():
-            endpoint = {"endpoint": "/mcp/rpc", "transport": "http-json-rpc"}
-            yield f"event: endpoint\ndata: {json.dumps(endpoint)}\n\n"
-            while True:
-                if await request.is_disconnected():
-                    break
-                yield f"event: ping\ndata: {json.dumps({'timestamp': datetime.now(timezone.utc).isoformat()})}\n\n"
-                await asyncio.sleep(15)
-
-        return StreamingResponse(event_stream(), media_type="text/event-stream")
-
-    # Plain GET — return discovery info so clients know this is a valid MCP endpoint
-    return JSONResponse({
-        "name": "Loystar MCP Server",
-        "version": "1.0.0",
-        "transport": "streamable-http",
-        "mcp_endpoint": "/mcp",
-        "note": "Send JSON-RPC 2.0 POST requests to this URL.",
-    })
+    credentials = await extract_loystar_credentials(request)
+    if not credentials:
+        return JSONResponse(
+            status_code=401,
+            headers={"WWW-Authenticate": bearer_challenge(request)},
+            content={"detail": "Authentication required."},
+        )
+    return Response(status_code=405, headers={"Allow": "POST"})
 
 
 @app.post("/mcp")
@@ -1068,13 +1078,10 @@ async def mcp_streamable_http(request: JsonRpcRequest, http_request: Request):
     tool_name = request.params.get("name") if request.method == "tools/call" else request.method
     credentials = await extract_loystar_credentials(http_request)
 
-    public_methods = {"initialize", "notifications/initialized", "ping"}
-    if (
-        not credentials
-        and not LoystarClient().is_configured()
-        and request.method not in public_methods
-    ):
-        await http_request.app.state.audit_log.record(http_request, tool_name, "error", "oauth_required")
+    if not credentials and not LoystarClient().is_configured():
+        await http_request.app.state.audit_log.record(
+            http_request, tool_name, "error", "oauth_required"
+        )
         return JSONResponse(
             status_code=401,
             headers={"WWW-Authenticate": bearer_challenge(http_request)},
@@ -1101,9 +1108,7 @@ async def mcp_streamable_http(request: JsonRpcRequest, http_request: Request):
             )
         )
         tool_result_error = bool(
-            request.method == "tools/call"
-            and response.result
-            and response.result.get("isError")
+            request.method == "tools/call" and response.result and response.result.get("isError")
         )
         status_value = "error" if response.error or tool_result_error else "success"
         await http_request.app.state.audit_log.record(http_request, tool_name, status_value)
@@ -1164,7 +1169,7 @@ async def mcp_rpc(request: JsonRpcRequest, http_request: Request):
             "jsonrpc": "2.0",
             "id": response.id,
             "result": response.result,
-            "error": response.error
+            "error": response.error,
         }
     )
 
@@ -1188,8 +1193,7 @@ async def call_tool(request: ToolCallRequest, http_request: Request):
         token = current_loystar_credentials.set(await extract_loystar_credentials(http_request))
         try:
             result = await app.state.mcp_server.call_tool(
-                tool_name=request.name,
-                arguments=request.arguments
+                tool_name=request.name, arguments=request.arguments
             )
         finally:
             current_loystar_credentials.reset(token)
@@ -1197,7 +1201,9 @@ async def call_tool(request: ToolCallRequest, http_request: Request):
         await http_request.app.state.audit_log.record(http_request, request.name, "success")
         return {"success": True, "result": result}
     except HTTPException:
-        await http_request.app.state.audit_log.record(http_request, request.name, "error", "connector_policy_rejected")
+        await http_request.app.state.audit_log.record(
+            http_request, request.name, "error", "connector_policy_rejected"
+        )
         raise
     except Exception as e:
         await http_request.app.state.audit_log.record(
@@ -1236,53 +1242,51 @@ async def create_hitl_request(
     action_type: str,
     action_data: Dict[str, Any],
     financial_exposure: float = 0.0,
-    target_count: int = 1
+    target_count: int = 1,
 ):
     """
     Create a HITL approval request.
-    
+
     This endpoint is used when the agent needs human approval
     for high-risk actions.
     """
     require_prototype_admin(request)
     # Check if auto-approval threshold is met
-    if financial_exposure <= settings.hitl_auto_approve_threshold and target_count <= settings.hitl_campaign_size_threshold:
-        return {
-            "status": "auto_approved",
-            "message": "Action falls within autonomous threshold"
-        }
-    
+    if (
+        financial_exposure <= settings.hitl_auto_approve_threshold
+        and target_count <= settings.hitl_campaign_size_threshold
+    ):
+        return {"status": "auto_approved", "message": "Action falls within autonomous threshold"}
+
     # Create pending request
     request_id = f"hitl_{datetime.now(timezone.utc).timestamp()}"
-    
+
     # In production, this would:
     # 1. Store the request in the database
     # 2. Send webhook to merchant for approval
     # 3. Add to Redis queue
-    
+
     return {
         "request_id": request_id,
         "status": "pending_approval",
         "action_type": action_type,
         "financial_exposure": financial_exposure,
         "target_count": target_count,
-        "created_at": datetime.now(timezone.utc).isoformat()
+        "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
 
 # Approve HITL request
 @app.post("/api/v1/hitl/approve/{request_id}")
-async def approve_hitl_request(
-    request_id: str, request: Request, approved: bool = True
-):
+async def approve_hitl_request(request_id: str, request: Request, approved: bool = True):
     """Approve or reject a HITL request"""
     require_prototype_admin(request)
     # In production, this would update the database and resume the action
-    
+
     return {
         "request_id": request_id,
         "status": "approved" if approved else "rejected",
-        "updated_at": datetime.now(timezone.utc).isoformat()
+        "updated_at": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -1298,9 +1302,7 @@ async def stripe_webhook(request: Request):
     try:
         import stripe
 
-        event = stripe.Webhook.construct_event(
-            payload, signature, settings.stripe_webhook_secret
-        )
+        event = stripe.Webhook.construct_event(payload, signature, settings.stripe_webhook_secret)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid Stripe webhook.")
 
@@ -1309,12 +1311,14 @@ async def stripe_webhook(request: Request):
     event_type = event.get("type")
     if event_type in {"charge.succeeded", "customer.subscription.created"}:
         event_data = event.get("data", {}).get("object", {})
-        results.append({
-            "event": event_type,
-            "status": "processed",
-            "customer_id": event_data.get("customer"),
-        })
-    
+        results.append(
+            {
+                "event": event_type,
+                "status": "processed",
+                "customer_id": event_data.get("customer"),
+            }
+        )
+
     return {"received": True, "results": results}
 
 
@@ -1334,18 +1338,14 @@ async def paystack_webhook(request: Request):
     if not provided or not hmac.compare_digest(provided, expected):
         raise HTTPException(status_code=400, detail="Invalid Paystack webhook.")
     payload = json.loads(raw_payload)
-    
+
     event = payload.get("event")
-    
+
     if event == "charge.success":
         # Process successful charge
         data = payload.get("data", {})
-        return {
-            "received": True,
-            "status": "processed",
-            "customer_id": data.get("customer")
-        }
-    
+        return {"received": True, "status": "processed", "customer_id": data.get("customer")}
+
     return {"received": True, "status": "ignored"}
 
 
@@ -1354,16 +1354,12 @@ async def paystack_webhook(request: Request):
 async def calculate_churn_risk(customer_id: str, request: Request):
     """Calculate churn risk for a customer"""
     require_prototype_admin(request)
-    result = await app.state.mcp_server.tools.calculate_churn_risk(
-        customer_id=customer_id
-    )
+    result = await app.state.mcp_server.tools.calculate_churn_risk(customer_id=customer_id)
     return result
 
 
 @app.post("/api/v1/customers/{customer_id}/coupon")
-async def generate_coupon(
-    customer_id: str, request: CouponGenerateRequest, http_request: Request
-):
+async def generate_coupon(customer_id: str, request: CouponGenerateRequest, http_request: Request):
     """Generate a custom coupon for a customer"""
     require_prototype_admin(http_request)
     result = await app.state.mcp_server.tools.generate_custom_coupon(
@@ -1379,15 +1375,11 @@ async def generate_coupon(
 
 
 @app.post("/api/v1/customers/{customer_id}/message")
-async def send_message(
-    customer_id: str, request: MessageSendRequest, http_request: Request
-):
+async def send_message(customer_id: str, request: MessageSendRequest, http_request: Request):
     """Send a message to a customer"""
     require_prototype_admin(http_request)
     result = await app.state.mcp_server.tools.dispatch_omnichannel_message(
-        customer_id=customer_id,
-        channel=request.channel,
-        message_body=request.message_body
+        customer_id=customer_id, channel=request.channel, message_body=request.message_body
     )
     return result
 
@@ -1404,10 +1396,10 @@ async def get_customer_profile(customer_id: str, request: Request):
 # Run the server
 if __name__ == "__main__":
     import uvicorn
-    
+
     uvicorn.run(
         app,
         host=settings.server_host,
         port=settings.server_port,
-        reload=settings.log_level == "DEBUG"
+        reload=settings.log_level == "DEBUG",
     )
