@@ -292,10 +292,26 @@ class OAuthStore:
     ) -> RegisteredClient:
         client = await self.get_client(client_id)
         if not client:
-            raise ValueError("unknown OAuth client")
+            # Claude and some other AI hosts use a metadata document URL as their client_id
+            # (OIDC Client Initiated Metadata Document pattern). Auto-register these on first use.
+            if client_id.startswith("https://") and redirect_uri:
+                try:
+                    await self.register_client(
+                        client_name=client_id,
+                        redirect_uris=[redirect_uri],
+                        grant_types=["authorization_code", "refresh_token"],
+                        response_types=["code"],
+                        token_endpoint_auth_method="none",
+                        client_id=client_id,
+                    )
+                    client = await self.get_client(client_id)
+                except Exception:
+                    pass
+            if not client:
+                raise ValueError("unknown OAuth client")
         if redirect_uri is not None and redirect_uri not in client.redirect_uris:
             raise ValueError("redirect_uri is not registered for this client")
-        if client.token_endpoint_auth_method == "client_secret_post":
+        if client.token_endpoint_auth_method in ("client_secret_post", "client_secret_basic"):
             if not client_secret or not client.client_secret_hash:
                 raise ValueError("client authentication failed")
             if not secrets.compare_digest(

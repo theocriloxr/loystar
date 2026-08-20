@@ -404,6 +404,16 @@ async def root():
     return result
 
 
+@app.post("/")
+async def root_post(request: Request):
+    """Redirect MCP JSON-RPC POSTs sent to root (/) to the correct /mcp endpoint."""
+    return JSONResponse(
+        status_code=308,
+        content={"detail": "MCP endpoint is at /mcp. Use POST /mcp for JSON-RPC requests."},
+        headers={"Location": "/mcp"},
+    )
+
+
 @app.get("/.well-known/oauth-protected-resource")
 @app.get("/.well-known/oauth-protected-resource/mcp")
 async def oauth_protected_resource_metadata(request: Request):
@@ -435,7 +445,7 @@ async def oauth_authorization_server_metadata(request: Request):
     if settings.oauth_allow_dynamic_registration:
         metadata["registration_endpoint"] = f"{issuer}/oauth/register"
 
-    metadata["client_id_metadata_document_supported"] = True
+    metadata["client_id_metadata_document_supported"] = False
 
     return metadata
 
@@ -985,26 +995,37 @@ async def loystar_sign_in(request: LoystarSignInRequest, http_request: Request):
 
 # MCP Protocol Endpoints
 @app.get("/mcp")
-async def mcp_sse(request: Request):
+async def mcp_get(request: Request):
     """
-    MCP Server-Sent Events endpoint for bidirectional communication.
-    
-    This endpoint supports SSE (Server-Sent Events) for streaming
-    responses to connected AI clients.
+    MCP discovery / SSE endpoint.
+
+    - Plain GET (e.g. a browser or Claude probing the URL) → 200 JSON describing the server.
+    - GET with Accept: text/event-stream → legacy SSE stream (only when enable_legacy_routes is on).
     """
-    require_feature(settings.enable_legacy_routes)
-    await enforce_connector_controls(request)
+    accept = request.headers.get("accept", "")
+    if "text/event-stream" in accept:
+        require_feature(settings.enable_legacy_routes)
+        await enforce_connector_controls(request)
 
-    async def event_stream():
-        endpoint = {"endpoint": "/mcp/rpc", "transport": "http-json-rpc"}
-        yield f"event: endpoint\ndata: {json.dumps(endpoint)}\n\n"
-        while True:
-            if await request.is_disconnected():
-                break
-            yield f"event: ping\ndata: {json.dumps({'timestamp': datetime.now(timezone.utc).isoformat()})}\n\n"
-            await asyncio.sleep(15)
+        async def event_stream():
+            endpoint = {"endpoint": "/mcp/rpc", "transport": "http-json-rpc"}
+            yield f"event: endpoint\ndata: {json.dumps(endpoint)}\n\n"
+            while True:
+                if await request.is_disconnected():
+                    break
+                yield f"event: ping\ndata: {json.dumps({'timestamp': datetime.now(timezone.utc).isoformat()})}\n\n"
+                await asyncio.sleep(15)
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+        return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+    # Plain GET — return discovery info so clients know this is a valid MCP endpoint
+    return JSONResponse({
+        "name": "Loystar MCP Server",
+        "version": "1.0.0",
+        "transport": "streamable-http",
+        "mcp_endpoint": "/mcp",
+        "note": "Send JSON-RPC 2.0 POST requests to this URL.",
+    })
 
 
 @app.post("/mcp")
