@@ -276,6 +276,8 @@ def oauth_error(
 
 
 def validate_oauth_resource(resource: str) -> str:
+    if not resource:
+        return settings.canonical_mcp_resource
     if resource != settings.canonical_mcp_resource:
         raise ValueError("resource must identify this MCP server")
     return resource
@@ -487,7 +489,7 @@ async def oauth_authorize_page(
             client_id, redirect_uri
         )
         normalize_scope(scope)
-        validate_oauth_resource(resource)
+        resource = validate_oauth_resource(resource)
         if code_challenge_method != "S256" or not 43 <= len(code_challenge) <= 128:
             raise ValueError("S256 PKCE is required")
     except ValueError:
@@ -568,7 +570,7 @@ async def oauth_authorize_submit(
     try:
         await request.app.state.oauth_store.validate_client(client_id, redirect_uri)
         normalized_scope = normalize_scope(scope)
-        validate_oauth_resource(resource)
+        resource = validate_oauth_resource(resource)
         if code_challenge_method != "S256":
             raise ValueError("S256 PKCE is required")
         if decision == "deny":
@@ -625,7 +627,7 @@ async def oauth_token(request: Request):
                 pass
     resource = str(form.get("resource") or "")
     try:
-        validate_oauth_resource(resource)
+        resource = validate_oauth_resource(resource)
         if grant_type == "authorization_code":
             session = await request.app.state.oauth_store.exchange_code(
                 code=str(form.get("code") or ""),
