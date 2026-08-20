@@ -504,8 +504,17 @@ async def oauth_authorize_page(
         resource = validate_oauth_resource(resource)
         if code_challenge_method != "S256" or not 43 <= len(code_challenge) <= 128:
             raise ValueError("S256 PKCE is required")
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid OAuth authorization request")
+    except ValueError as exc:
+        error_detail = str(exc)
+        # If the client is unknown (e.g. server restarted and wiped in-memory store),
+        # return a proper OAuth error so Claude knows to re-register.
+        if "unknown OAuth client" in error_detail:
+            return oauth_error(
+                "invalid_client",
+                "Client not found. Please reconnect the MCP server to re-register.",
+                400,
+            )
+        raise HTTPException(status_code=400, detail=f"Invalid OAuth authorization request: {error_detail}")
 
     hidden_fields = {
         "response_type": response_type,
@@ -606,8 +615,8 @@ async def oauth_authorize_submit(
             scope=normalized_scope,
             resource=resource,
         )
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid OAuth authorization request")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid OAuth authorization request: {exc}")
     except Exception:
         raise HTTPException(status_code=400, detail="Loystar authorization failed")
 
