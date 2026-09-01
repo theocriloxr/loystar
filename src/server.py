@@ -5,16 +5,17 @@ This module implements the Model Context Protocol (MCP) server that exposes
 resources and tools for the AI agent to interact with customer loyalty data.
 """
 import json
-import uuid
 import re
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from enum import Enum
+from typing import Any, Dict, List, Optional
 
 from src.config import settings
 from src.hitl import RiskTieringEngine, create_approval_request
-from src.loystar_client import LoystarClient
+from src.loystar_client import LoystarAPIError, LoystarClient
+
 
 # MCP Protocol Messages
 @dataclass
@@ -824,7 +825,7 @@ class MCPServer:
                         "structuredContent": structured,
                         "isError": False,
                     }
-                except (TypeError, ValueError) as exc:
+                except (LoystarAPIError, TypeError, ValueError) as exc:
                     result = {
                         "content": [{"type": "text", "text": str(exc)}],
                         "isError": True,

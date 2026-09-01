@@ -5,8 +5,14 @@ import urllib.parse
 from fastapi.testclient import TestClient
 
 from src.config import settings
+from src.loystar_client import (
+    LoystarAPIError,
+    LoystarClient,
+    LoystarCredentials,
+    current_loystar_credentials,
+)
 from src.main import app
-from src.server import create_mcp_server
+from src.server import MCPRequest, create_mcp_server
 
 
 def test_mcp_server_lists_core_tools():
@@ -35,6 +41,63 @@ async def test_loystar_auth_status_does_not_expose_secret_values():
     assert "has_access_token" in result
     assert "access-token" not in result
     assert "client" not in result
+
+
+async def test_loystar_auth_status_reports_request_credential_expiry():
+    context_token = current_loystar_credentials.set(
+        LoystarCredentials(
+            access_token="secret",
+            client="client",
+            uid="merchant@example.com",
+            expiry="1",
+        )
+    )
+    try:
+        result = await create_mcp_server().call_tool("loystar_auth_status", {})
+    finally:
+        current_loystar_credentials.reset(context_token)
+
+    assert result["configured"] is True
+    assert result["credentials_expired"] is True
+    assert "secret" not in str(result)
+
+
+async def test_upstream_api_errors_are_returned_as_mcp_tool_errors(monkeypatch):
+    server = create_mcp_server()
+
+    async def fail_sales(*args, **kwargs):
+        raise LoystarAPIError(
+            'Loystar API request failed: 500 Internal Server Error; request_id=req-123'
+        )
+
+    monkeypatch.setattr(server.tools.loystar, "get_sales", fail_sales)
+    response = await server.handle_request(
+        MCPRequest(
+            id="1",
+            method="tools/call",
+            params={"name": "loystar_get_sales", "arguments": {}},
+        )
+    )
+
+    assert response.error is None
+    assert response.result["isError"] is True
+    assert "request_id=req-123" in response.result["content"][0]["text"]
+
+
+def test_upstream_error_details_are_filtered_and_redacted():
+    detail = LoystarClient()._safe_error_detail(
+        {
+            "message": "Unable to load merchant",
+            "access_token": "must-not-leak",
+            "errors": {"password": "must-not-leak"},
+            "customer": {"email": "must-not-leak@example.com"},
+        }
+    )
+
+    assert "Unable to load merchant" in detail
+    assert "[redacted]" in detail
+    assert "must-not-leak" not in detail
+    assert "customer" not in detail
 
 
 async def test_mcp_server_reads_customer_profile_resource():

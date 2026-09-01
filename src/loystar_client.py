@@ -8,9 +8,11 @@ write access.
 """
 from __future__ import annotations
 
+import json
 import re
 from contextvars import ContextVar
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 import httpx
@@ -102,8 +104,28 @@ class LoystarClient:
             "has_client": bool(credentials and credentials.client),
             "has_uid": bool(credentials and credentials.uid),
             "has_expiry": bool(credentials and credentials.expiry),
+            "credentials_expired": self._credentials_expired(credentials),
             "redact_pii": self.redact_pii,
         }
+
+    @staticmethod
+    def _credentials_expired(
+        credentials: Optional[LoystarCredentials],
+    ) -> Optional[bool]:
+        """Return expiry state without exposing the upstream expiry value."""
+        if not credentials or not credentials.expiry:
+            return None
+        value = credentials.expiry.strip()
+        try:
+            expires_at = datetime.fromtimestamp(float(value), tz=timezone.utc)
+        except (ValueError, OverflowError, OSError):
+            try:
+                expires_at = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                if expires_at.tzinfo is None:
+                    expires_at = expires_at.replace(tzinfo=timezone.utc)
+            except ValueError:
+                return None
+        return expires_at <= datetime.now(timezone.utc)
 
     def _headers(self) -> Dict[str, str]:
         credentials = current_loystar_credentials.get()
@@ -207,9 +229,23 @@ class LoystarClient:
             payload = {"raw": response.text}
 
         if response.status_code >= 400:
-            raise LoystarAPIError(
-                f"Loystar API request failed: {response.status_code} {response.reason_phrase}"
+            detail = self._safe_error_detail(payload)
+            request_id = next(
+                (
+                    response.headers.get(name)
+                    for name in ("x-request-id", "request-id", "x-correlation-id")
+                    if response.headers.get(name)
+                ),
+                None,
             )
+            parts = [
+                f"Loystar API request failed: {response.status_code} {response.reason_phrase}"
+            ]
+            if request_id:
+                parts.append(f"request_id={request_id[:128]}")
+            if detail:
+                parts.append(f"detail={detail}")
+            raise LoystarAPIError("; ".join(parts))
 
         return {
             "source": "loystar_api",
@@ -233,6 +269,19 @@ class LoystarClient:
             for key, value in (values or {}).items()
             if value is not None and value != ""
         }
+
+    def _safe_error_detail(self, payload: Any) -> Optional[str]:
+        """Extract a short, redacted upstream error without leaking response data."""
+        if not isinstance(payload, dict):
+            return None
+        selected = {
+            key: payload[key]
+            for key in ("error", "errors", "message", "detail")
+            if key in payload
+        }
+        if not selected:
+            return None
+        return json.dumps(self._redact(selected), ensure_ascii=False)[:500]
 
     def _redact(self, value: Any) -> Any:
         if isinstance(value, dict):
