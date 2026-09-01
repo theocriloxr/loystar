@@ -74,7 +74,17 @@ class LoystarClient:
 
     def auth_status(self) -> Dict[str, Any]:
         """Expose non-sensitive configuration status for local debugging."""
-        has_request_credentials = current_loystar_credentials.get() is not None
+        request_credentials = current_loystar_credentials.get()
+        has_request_credentials = request_credentials is not None
+        credentials = request_credentials
+        if credentials is None and settings.allow_environment_credentials:
+            credentials = LoystarCredentials(
+                access_token=settings.loystar_access_token or "",
+                client=settings.loystar_client or "",
+                uid=settings.loystar_uid or "",
+                expiry=settings.loystar_expiry or "",
+                token_type=settings.loystar_token_type,
+            )
         return {
             "configured": self.is_configured(),
             "credential_source": (
@@ -86,10 +96,12 @@ class LoystarClient:
             ),
             "api_base_url": self.api_base_url,
             "api_v1_base_url": self.api_v1_base_url,
-            "has_access_token": bool(settings.loystar_access_token),
-            "has_client": bool(settings.loystar_client),
-            "has_uid": bool(settings.loystar_uid),
-            "has_expiry": bool(settings.loystar_expiry),
+            # Report the credentials active for this request. OAuth-backed MCP
+            # calls intentionally do not populate the process environment.
+            "has_access_token": bool(credentials and credentials.access_token),
+            "has_client": bool(credentials and credentials.client),
+            "has_uid": bool(credentials and credentials.uid),
+            "has_expiry": bool(credentials and credentials.expiry),
             "redact_pii": self.redact_pii,
         }
 

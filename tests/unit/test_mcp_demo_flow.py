@@ -145,6 +145,10 @@ def test_fastapi_loystar_auth_status_can_use_request_headers():
     result = response.json()["result"]
     assert result["configured"] is True
     assert result["credential_source"] == "request_headers"
+    assert result["has_access_token"] is True
+    assert result["has_client"] is True
+    assert result["has_uid"] is True
+    assert result["has_expiry"] is True
     assert "test_access_token" not in str(result)
 
 
