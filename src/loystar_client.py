@@ -44,6 +44,32 @@ current_loystar_credentials: ContextVar[Optional[LoystarCredentials]] = ContextV
 class LoystarClient:
     """Typed wrapper around merchant-safe Loystar API endpoints."""
 
+    _BRANCH_RESPONSE_FIELDS = {
+        "active",
+        "address",
+        "address_line_1",
+        "address_line_2",
+        "attributes",
+        "branch_address",
+        "branch_code",
+        "branch_name",
+        "business_branches",
+        "city",
+        "country",
+        "created_at",
+        "data",
+        "id",
+        "latitude",
+        "longitude",
+        "name",
+        "postal_code",
+        "postcode",
+        "state",
+        "status",
+        "type",
+        "updated_at",
+    }
+
     def __init__(
         self,
         api_base_url: str = settings.loystar_api_base_url,
@@ -327,6 +353,18 @@ class LoystarClient:
             return "[redacted]"
         return self._redact(value)
 
+    def _minimize_business_branches(self, value: Any) -> Any:
+        """Keep branch facts while dropping nested staff and account metadata."""
+        if isinstance(value, list):
+            return [self._minimize_business_branches(item) for item in value]
+        if not isinstance(value, dict):
+            return value
+        return {
+            key: self._minimize_business_branches(item)
+            for key, item in value.items()
+            if key.lower().replace("-", "_") in self._BRANCH_RESPONSE_FIELDS
+        }
+
     @staticmethod
     def _mask_email(email: str) -> str:
         if "@" not in email:
@@ -446,12 +484,14 @@ class LoystarClient:
         )
 
     async def get_business_branches(self, include_pii: bool = False) -> Dict[str, Any]:
-        return await self._request(
+        result = await self._request(
             "GET",
             self.api_base_url,
             "/api/v2/business_branches",
             include_pii=include_pii,
         )
+        result["data"] = self._minimize_business_branches(result["data"])
+        return result
 
     async def get_invoices(
         self,

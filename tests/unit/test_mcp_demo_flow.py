@@ -100,6 +100,30 @@ def test_upstream_error_details_are_filtered_and_redacted():
     assert "customer" not in detail
 
 
+def test_branch_response_drops_nested_account_and_staff_data():
+    payload = {
+        "data": [
+            {
+                "id": 1,
+                "name": "Home Branch",
+                "address": "321 High Rd",
+                "staff": {
+                    "email": "owner@example.com",
+                    "device_token": "device-secret",
+                    "stripe_customer_id": "cus_secret",
+                    "subscription": {"plan": "paid"},
+                },
+            }
+        ]
+    }
+
+    minimized = LoystarClient()._minimize_business_branches(payload)
+
+    assert minimized == {
+        "data": [{"id": 1, "name": "Home Branch", "address": "321 High Rd"}]
+    }
+
+
 async def test_mcp_server_reads_customer_profile_resource():
     server = create_mcp_server()
 
