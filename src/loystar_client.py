@@ -240,14 +240,24 @@ class LoystarClient:
         include_pii: bool = False,
     ) -> Dict[str, Any]:
         url = f"{base_url}{path}"
+        urls = [url]
+        primary_url = f"{self.api_base_url}{path}"
+        if method.upper() == "GET" and base_url.rstrip("/") == self.api_v1_base_url:
+            if primary_url != url:
+                urls.append(primary_url)
+
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-            response = await client.request(
-                method,
-                url,
-                headers=self._headers(),
-                params=self._clean(params),
-                json=json_body,
-            )
+            for candidate_url in urls:
+                response = await client.request(
+                    method,
+                    candidate_url,
+                    headers=self._headers(),
+                    params=self._clean(params),
+                    json=json_body,
+                )
+                url = candidate_url
+                if response.status_code < 500:
+                    break
 
         try:
             payload = response.json()
