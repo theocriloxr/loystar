@@ -162,6 +162,42 @@ async def test_legacy_api1_server_error_retries_primary_rest_host(monkeypatch):
     assert result["data"] == {"sales": []}
 
 
+async def test_legacy_api1_connection_error_retries_primary_rest_host(monkeypatch):
+    requested_urls = []
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def request(self, method, url, **kwargs):
+            requested_urls.append(url)
+            if url.startswith("https://api1.loystar.co"):
+                raise httpx.ConnectError("legacy host unavailable")
+            return httpx.Response(200, json={"customers": []})
+
+    monkeypatch.setattr("src.loystar_client.httpx.AsyncClient", FakeAsyncClient)
+    client = LoystarClient()
+    context_token = current_loystar_credentials.set(
+        LoystarCredentials("token", "client", "merchant@example.com", "9999999999")
+    )
+    try:
+        result = await client.get_customers()
+    finally:
+        current_loystar_credentials.reset(context_token)
+
+    assert requested_urls == [
+        "https://api1.loystar.co/api/v2/customers_list",
+        "https://api.loystar.co/api/v2/customers_list",
+    ]
+    assert result["data"] == {"customers": []}
+
+
 async def test_mcp_server_reads_customer_profile_resource():
     server = create_mcp_server()
 

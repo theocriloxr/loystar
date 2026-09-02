@@ -247,14 +247,22 @@ class LoystarClient:
                 urls.append(primary_url)
 
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-            for candidate_url in urls:
-                response = await client.request(
-                    method,
-                    candidate_url,
-                    headers=self._headers(),
-                    params=self._clean(params),
-                    json=json_body,
-                )
+            for index, candidate_url in enumerate(urls):
+                try:
+                    response = await client.request(
+                        method,
+                        candidate_url,
+                        headers=self._headers(),
+                        params=self._clean(params),
+                        json=json_body,
+                    )
+                except httpx.RequestError as exc:
+                    if index + 1 < len(urls):
+                        continue
+                    raise LoystarAPIError(
+                        "Loystar API request failed: upstream connection error "
+                        f"({type(exc).__name__})"
+                    ) from exc
                 url = candidate_url
                 if response.status_code < 500:
                     break
