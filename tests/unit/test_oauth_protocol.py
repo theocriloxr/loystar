@@ -115,13 +115,17 @@ def test_get_mcp_challenges_before_transport_negotiation():
     assert response.headers["www-authenticate"].startswith("Bearer resource_metadata=")
 
 
-def test_authorize_accepts_consent_and_defaults_resource(monkeypatch):
+def _oauth_challenge() -> str:
     verifier = "a-secure-pkce-verifier-that-is-long-enough-1234567890"
-    challenge = (
+    return (
         base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest())
         .decode("ascii")
         .rstrip("=")
     )
+
+
+def test_authorize_accepts_consent_and_defaults_resource(monkeypatch):
+    challenge = _oauth_challenge()
     with TestClient(app) as client:
         registration = client.post(
             "/oauth/register",
@@ -145,3 +149,45 @@ def test_authorize_accepts_consent_and_defaults_resource(monkeypatch):
         )
     assert response.status_code == 200
     assert f'value="{settings.canonical_mcp_resource}"' in response.text
+
+
+def test_confidential_dcr_registration_can_enter_authorization_without_client_secret():
+    """Regression: DCR 201 must not be followed by GET /oauth/authorize 400.
+
+    A confidential client authenticates at /oauth/token. Its secret must never be
+    required in the user-agent authorization request.
+    """
+    challenge = _oauth_challenge()
+    redirect_uri = "https://claude.ai/api/mcp/auth_callback"
+
+    with TestClient(app) as client:
+        registration_response = client.post(
+            "/oauth/register",
+            json={
+                "client_name": "Confidential Claude-like client",
+                "redirect_uris": [redirect_uri],
+                "grant_types": ["authorization_code", "refresh_token"],
+                "response_types": ["code"],
+                "token_endpoint_auth_method": "client_secret_basic",
+            },
+        )
+        assert registration_response.status_code == 201
+        registration = registration_response.json()
+        assert registration["client_secret"]
+
+        authorize = client.get(
+            "/oauth/authorize",
+            params={
+                "response_type": "code",
+                "client_id": registration["client_id"],
+                "redirect_uri": redirect_uri,
+                "scope": "loystar.read offline_access",
+                "resource": settings.canonical_mcp_resource,
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+                "prompt": "consent",
+            },
+        )
+
+    assert authorize.status_code == 200
+    assert "Connect Loystar" in authorize.text
