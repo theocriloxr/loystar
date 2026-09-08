@@ -5,7 +5,12 @@
     "buildCommand": null
   },
   "deploy": {
-    "startCommand": "uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1",
+    "preDeployCommand": [
+      "python -m py_compile src/oauth_cimd_clean.py src/oauth_store_clean.py src/loystar_client_clean.py src/main_clean.py main.py",
+      "pytest -q tests/unit/test_clean_core.py",
+      "pytest -q tests/integration/test_clean_durable_oauth.py"
+    ],
+    "startCommand": "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1",
     "healthcheckPath": "/health",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 3
