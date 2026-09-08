@@ -1,13 +1,13 @@
 import base64
 import hashlib
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from fastapi.testclient import TestClient
-from starlette.responses import RedirectResponse
 
 from src.config import Settings, settings
 from src.loystar_client import LoystarClient, LoystarCredentials
-from src.main import app
+from src.main import RedirectResponse, app
 from src.oauth_store import OAuthStore
 from src.server import create_mcp_server
 
@@ -147,15 +147,36 @@ async def test_confidential_dcr_client_authorizes_without_secret_but_token_endpo
         )
 
 
-def test_oauth_302_redirect_is_normalized_to_303_and_not_cached():
+def test_oauth_callback_is_303_no_store_and_contains_rfc9207_issuer():
     response = RedirectResponse(
-        "https://client.example/callback?code=example&state=state-value",
+        "https://client.example/callback?code=loy_code_example&state=state-value",
         status_code=302,
     )
 
     assert response.status_code == 303
     assert response.headers["cache-control"] == "no-store"
     assert response.headers["pragma"] == "no-cache"
+    callback = urlparse(response.headers["location"])
+    query = parse_qs(callback.query)
+    assert query["iss"] == [(settings.oauth_issuer or settings.canonical_server_origin).rstrip("/")]
+    assert query["state"] == ["state-value"]
+
+
+def test_oauth_denial_callback_also_contains_rfc9207_issuer():
+    response = RedirectResponse(
+        "https://client.example/callback?error=access_denied&state=state-value",
+        status_code=302,
+    )
+    query = parse_qs(urlparse(response.headers["location"]).query)
+    assert response.status_code == 303
+    assert query["iss"] == [(settings.oauth_issuer or settings.canonical_server_origin).rstrip("/")]
+
+
+def test_authorization_metadata_advertises_rfc9207_issuer_support():
+    with TestClient(app) as client:
+        response = client.get("/.well-known/oauth-authorization-server")
+    assert response.status_code == 200
+    assert response.json()["authorization_response_iss_parameter_supported"] is True
 
 
 def test_untrusted_browser_origin_is_rejected():
