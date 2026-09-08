@@ -3,13 +3,13 @@ import hashlib
 
 import pytest
 from fastapi.testclient import TestClient
+from starlette.responses import RedirectResponse
 
 from src.config import Settings, settings
 from src.loystar_client import LoystarClient, LoystarCredentials
 from src.main import app
 from src.oauth_store import OAuthStore
 from src.server import create_mcp_server
-from starlette.responses import RedirectResponse
 
 
 def _challenge(verifier: str) -> str:
