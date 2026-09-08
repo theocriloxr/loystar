@@ -2,11 +2,37 @@ import base64
 import hashlib
 import urllib.parse
 
+import pytest
 from fastapi.testclient import TestClient
 
 from src.config import settings
 from src.loystar_client_clean import ResilientLoystarClient
 from src.main_clean import app
+
+
+@pytest.fixture(autouse=True)
+def _isolate_unit_runtime(monkeypatch):
+    """Keep clean-core unit tests out of live production infrastructure.
+
+    Railway executes this suite in the production service environment during
+    pre-deploy. The application middleware is already constructed with the
+    configured production host allowlist, so requests use the configured
+    canonical origin, while runtime dependencies are switched to development /
+    in-memory mode for the duration of each test. This prevents deployment
+    tests from creating OAuth clients/tokens in the production PostgreSQL
+    database or depending on production Redis.
+    """
+    monkeypatch.setattr(settings, "environment", "development")
+    monkeypatch.setattr(settings, "database_url", None)
+    monkeypatch.setattr(settings, "redis_url", None)
+    monkeypatch.setattr(settings, "oauth_encryption_key", None)
+
+
+def _client() -> TestClient:
+    # Use the configured canonical origin so TrustedHostMiddleware receives a
+    # host that belongs to the real allowlist. In production this is HTTPS;
+    # locally it remains the configured development origin.
+    return TestClient(app, base_url=settings.canonical_server_origin)
 
 
 def _verifier() -> str:
@@ -71,7 +97,7 @@ def _authorize_post(client: TestClient, registration: dict, verifier: str):
 
 
 def test_clean_metadata_health_and_mcp_challenge():
-    with TestClient(app) as client:
+    with _client() as client:
         health = client.get("/healthz")
         metadata = client.get("/.well-known/oauth-authorization-server")
         mcp = client.post(
@@ -90,7 +116,7 @@ def test_clean_metadata_health_and_mcp_challenge():
 
 
 def test_dcr_client_is_immediately_available_for_authorization():
-    with TestClient(app) as client:
+    with _client() as client:
         registration = _registration(client)
         response = _authorize_get(client, registration, _verifier())
 
@@ -115,7 +141,7 @@ def test_public_dcr_oauth_flow_reaches_token_refresh_and_authenticated_mcp(monke
     monkeypatch.setattr(ResilientLoystarClient, "sign_in", fake_sign_in)
     verifier = _verifier()
 
-    with TestClient(app) as client:
+    with _client() as client:
         registration = _registration(client)
         assert _authorize_get(client, registration, verifier).status_code == 200
 
@@ -199,7 +225,7 @@ def test_confidential_client_secret_is_required_only_at_token_endpoint(monkeypat
     monkeypatch.setattr(ResilientLoystarClient, "sign_in", fake_sign_in)
     verifier = _verifier()
 
-    with TestClient(app) as client:
+    with _client() as client:
         registration = _registration(client, "client_secret_basic")
         assert "client_secret" in registration
         # Authorization endpoint validates client + redirect without requiring a secret.
@@ -246,7 +272,7 @@ def test_confidential_client_secret_is_required_only_at_token_endpoint(monkeypat
 
 def test_denial_callback_is_303_and_contains_issuer():
     verifier = _verifier()
-    with TestClient(app) as client:
+    with _client() as client:
         registration = _registration(client)
         response = client.post(
             "/oauth/authorize",
