@@ -9,6 +9,7 @@ from src.loystar_client import LoystarClient, LoystarCredentials
 from src.main import app
 from src.oauth_store import OAuthStore
 from src.server import create_mcp_server
+from starlette.responses import RedirectResponse
 
 
 def _challenge(verifier: str) -> str:
@@ -107,6 +108,54 @@ async def test_oauth_store_binds_redirect_resource_and_rotates_refresh_tokens():
         client_id=client_id,
     )
     assert await store.resolve_token(rotated.access_token, resource) is None
+
+
+async def test_confidential_dcr_client_authorizes_without_secret_but_token_endpoint_requires_it():
+    store = OAuthStore()
+    registered = await store.register_client(
+        client_name="Confidential DCR test",
+        redirect_uris=["https://client.example/callback"],
+        token_endpoint_auth_method="client_secret_basic",
+    )
+
+    client_id = registered["client_id"]
+    client_secret = registered["client_secret"]
+
+    # Browser authorization validates identity + redirect only. A secret must
+    # never be required or exposed in the authorization URL/form.
+    client = await store.validate_client(client_id, "https://client.example/callback")
+    assert client.client_id == client_id
+    assert client.token_endpoint_auth_method == "client_secret_basic"
+
+    # Token-like endpoints still fail closed if the confidential client does
+    # not authenticate.
+    with pytest.raises(ValueError, match="client authentication failed"):
+        await store.refresh(
+            refresh_token="missing-refresh-token",
+            client_id=client_id,
+            resource="https://bridge.example/mcp",
+        )
+
+    # Supplying the right secret passes client authentication; processing then
+    # reaches the expected missing-token check.
+    with pytest.raises(ValueError, match="invalid or expired refresh token"):
+        await store.refresh(
+            refresh_token="missing-refresh-token",
+            client_id=client_id,
+            resource="https://bridge.example/mcp",
+            client_secret=client_secret,
+        )
+
+
+def test_oauth_302_redirect_is_normalized_to_303_and_not_cached():
+    response = RedirectResponse(
+        "https://client.example/callback?code=example&state=state-value",
+        status_code=302,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["pragma"] == "no-cache"
 
 
 def test_untrusted_browser_origin_is_rejected():
