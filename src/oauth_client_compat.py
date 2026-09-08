@@ -5,9 +5,9 @@ client authentication. OAuth authorization requests must never require a client
 secret in the browser URL, while token, refresh, and revocation requests still
 authenticate confidential clients.
 
-It also upgrades the legacy 302 OAuth callback redirects to 303 See Other and
-adds no-store headers. The application currently uses explicit 302 redirects
-only for the OAuth authorization callback/denial paths.
+It also upgrades legacy 302 OAuth callback redirects to 303 See Other, prevents
+caching, and adds the RFC 9207 ``iss`` response parameter expected by current
+MCP authorization clients before they redeem an authorization code.
 """
 
 from __future__ import annotations
@@ -15,11 +15,12 @@ from __future__ import annotations
 import hashlib
 import logging
 import secrets
-from typing import Optional
-from urllib.parse import parse_qs, urlparse
+from typing import Any, Optional
+from urllib.parse import parse_qs, parse_qsl, urlencode, urlparse, urlsplit, urlunsplit
 
 import starlette.responses as starlette_responses
 
+from src.config import settings
 from src.oauth_store import OAuthStore, RegisteredClient
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,7 @@ _ORIGINAL_REFRESH = OAuthStore.refresh
 _ORIGINAL_REVOKE_TOKEN = OAuthStore.revoke_token
 _ORIGINAL_CREATE_CODE = OAuthStore.create_code
 _ORIGINAL_REDIRECT_RESPONSE = starlette_responses.RedirectResponse
+_ORIGINAL_JSON_RESPONSE = starlette_responses.JSONResponse
 
 
 def _hash_secret(value: str) -> str:
@@ -41,6 +43,32 @@ def _hash_secret(value: str) -> str:
 def _client_label(client_id: str) -> str:
     parsed = urlparse(client_id)
     return parsed.hostname or "registered-client"
+
+
+def _oauth_issuer() -> str:
+    return (settings.oauth_issuer or settings.canonical_server_origin).rstrip("/")
+
+
+def _with_authorization_response_issuer(url: str) -> str:
+    """Add RFC 9207 ``iss`` to Loystar authorization responses only.
+
+    Authorization codes issued by this service are prefixed with ``loy_code_``;
+    denials use ``error=access_denied``. Restricting the rewrite to those values
+    prevents the global Starlette response patch from modifying unrelated
+    redirects elsewhere in the application.
+    """
+    parts = urlsplit(url)
+    pairs = parse_qsl(parts.query, keep_blank_values=True)
+    query = dict(pairs)
+    code = query.get("code", "")
+    is_oauth_callback = code.startswith("loy_code_") or query.get("error") == "access_denied"
+    if not is_oauth_callback or "iss" in query:
+        return url
+
+    pairs.append(("iss", _oauth_issuer()))
+    return urlunsplit(
+        (parts.scheme, parts.netloc, parts.path, urlencode(pairs), parts.fragment)
+    )
 
 
 async def _validate_client_for_authorization(
@@ -144,7 +172,7 @@ async def _create_code_with_safe_logging(self: OAuthStore, **kwargs):
 
 
 class OAuthRedirectResponse(_ORIGINAL_REDIRECT_RESPONSE):
-    """Normalize OAuth form-post redirects to 303 and prevent caching."""
+    """Normalize OAuth callbacks to 303, add RFC 9207 issuer, and prevent caching."""
 
     def __init__(
         self,
@@ -153,33 +181,53 @@ class OAuthRedirectResponse(_ORIGINAL_REDIRECT_RESPONSE):
         headers=None,
         background=None,
     ) -> None:
-        original_status = status_code
         response_headers = dict(headers or {})
+        final_url = str(url)
+        parsed_before = urlparse(final_url)
+        query_before = parse_qs(parsed_before.query, keep_blank_values=True)
+        is_oauth_callback = (
+            query_before.get("code", [""])[0].startswith("loy_code_")
+            or query_before.get("error", [""])[0] == "access_denied"
+        )
 
-        if status_code == 302:
-            status_code = 303
+        if is_oauth_callback:
+            if status_code == 302:
+                status_code = 303
+            final_url = _with_authorization_response_issuer(final_url)
             response_headers.setdefault("Cache-Control", "no-store")
             response_headers.setdefault("Pragma", "no-cache")
 
-            parsed = urlparse(str(url))
+            parsed = urlparse(final_url)
             query = parse_qs(parsed.query, keep_blank_values=True)
             logger.info(
-                "OAuth authorization redirect redirect_host=%s state_present=%s authorization_code_issued=%s status=303",
+                "OAuth authorization redirect redirect_host=%s state_present=%s issuer_present=%s authorization_code_issued=%s status=%s",
                 parsed.hostname or "unknown",
                 "state" in query and bool(query.get("state", [""])[0]),
+                query.get("iss", [""])[0] == _oauth_issuer(),
                 "code" in query,
+                status_code,
             )
 
         super().__init__(
-            url,
+            final_url,
             status_code=status_code,
             headers=response_headers or None,
             background=background,
         )
 
-        # Keep the variable referenced so static analyzers make the intentional
-        # 302 -> 303 normalization obvious.
-        _ = original_status
+
+class OAuthJSONResponse(_ORIGINAL_JSON_RESPONSE):
+    """Advertise RFC 9207 support in authorization-server metadata."""
+
+    def __init__(self, content: Any, *args, **kwargs) -> None:
+        if isinstance(content, dict) and {
+            "issuer",
+            "authorization_endpoint",
+            "token_endpoint",
+        }.issubset(content):
+            content = dict(content)
+            content.setdefault("authorization_response_iss_parameter_supported", True)
+        super().__init__(content, *args, **kwargs)
 
 
 def install() -> None:
@@ -194,5 +242,6 @@ def install() -> None:
     OAuthStore.create_code = _create_code_with_safe_logging
 
     starlette_responses.RedirectResponse = OAuthRedirectResponse
+    starlette_responses.JSONResponse = OAuthJSONResponse
 
     OAuthStore._loystar_client_compat_installed = True
