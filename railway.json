@@ -6,7 +6,7 @@
   },
   "deploy": {
     "preDeployCommand": [
-      "python -m py_compile src/oauth_cimd_clean.py src/oauth_store_clean.py src/loystar_client_clean.py src/main_clean.py main.py && pytest -q tests/unit/test_clean_core.py"
+      "python scripts/run_clean_predeploy.py"
     ],
     "startCommand": "uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1",
     "healthcheckPath": "/health",
