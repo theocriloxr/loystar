@@ -3,7 +3,7 @@
 Railway health checks arrive over its private network with an internal Host
 header that should not need to be part of the public OAuth/MCP allowlist. This
 wrapper normalizes Host only for non-sensitive health endpoints; every other
-request, including OAuth and /mcp, still reaches the app with its original Host
+request, including OAuth and MCP, still reaches the app with its original Host
 and is enforced by TrustedHostMiddleware.
 
 The wrapper also exposes a non-secret build identifier in response headers so
@@ -14,8 +14,12 @@ from __future__ import annotations
 import os
 from urllib.parse import urlparse
 
+import src.main_clean as clean_core
+from src.claude_compat import install as install_claude_compat
 from src.config import settings
-from src.main_clean import app as clean_app
+
+clean_app = clean_core.app
+install_claude_compat(clean_app, clean_core)
 
 _HEALTH_PATHS = {"/health", "/healthz", "/live"}
 _PUBLIC_HOST = urlparse(settings.canonical_server_origin or settings.server_base_url).hostname
