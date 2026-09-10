@@ -51,8 +51,14 @@ COMPILE_TARGETS = [
     "src/oauth_cimd_clean.py",
     "src/oauth_store_clean.py",
     "src/loystar_client_clean.py",
+    "src/claude_compat.py",
     "src/main_clean.py",
     "main.py",
+]
+
+TEST_TARGETS = [
+    "tests/unit/test_clean_core.py",
+    "tests/unit/test_claude_compat.py",
 ]
 
 
@@ -64,7 +70,7 @@ def run(command: list[str]) -> None:
 def main() -> int:
     print(f"PREDEPLOY_BUILD_SHA={BUILD_SHA}", flush=True)
     run([sys.executable, "-m", "py_compile", *COMPILE_TARGETS])
-    run([sys.executable, "-m", "pytest", "-q", "tests/unit/test_clean_core.py"])
+    run([sys.executable, "-m", "pytest", "-q", *TEST_TARGETS])
     print("PREDEPLOY_STATUS=PASS", flush=True)
     return 0
 
