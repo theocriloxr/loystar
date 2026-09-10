@@ -8,8 +8,11 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from src.config import settings
 
 
+_MCP_PATHS = {"/mcp", "/mcp-v2"}
+
+
 class MCPContentTypeMiddleware:
-    """Require JSON for the Streamable HTTP request body."""
+    """Require JSON for Streamable HTTP MCP request bodies."""
 
     def __init__(self, app: ASGIApp):
         self.app = app
@@ -17,7 +20,7 @@ class MCPContentTypeMiddleware:
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if (
             scope["type"] == "http"
-            and scope.get("path") == "/mcp"
+            and scope.get("path") in _MCP_PATHS
             and scope.get("method") == "POST"
         ):
             content_type = Headers(scope=scope).get("content-type", "")
@@ -114,12 +117,12 @@ class ProductionHTTPSMiddleware:
         if scope["type"] != "http" or not settings.is_production:
             await self.app(scope, receive, send)
             return
-            
+
         path = scope.get("path", "")
         if path == "/health" or path == "/live":
             await self.app(scope, receive, send)
             return
-            
+
         headers = Headers(scope=scope)
         scheme = scope.get("scheme", "http")
         if settings.trust_proxy_headers:
@@ -128,7 +131,7 @@ class ProductionHTTPSMiddleware:
             response = JSONResponse({"detail": "HTTPS is required."}, status_code=400)
             await response(scope, receive, send)
             return
-            
+
         scope["scheme"] = "https"
         await self.app(scope, receive, send)
 
