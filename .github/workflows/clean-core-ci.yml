@@ -3,6 +3,7 @@ name: Clean MCP Core CI
 on:
   push:
     branches:
+      - main
       - rebuild/clean-mcp-core-20260908
   pull_request:
     branches:
@@ -24,7 +25,7 @@ jobs:
           python -m pip install -e ".[dev]"
       - name: Compile clean core
         run: |
-          python -m py_compile src/oauth_cimd_clean.py src/oauth_store_clean.py src/loystar_client_clean.py src/main_clean.py
+          python -m py_compile src/oauth_cimd_clean.py src/oauth_store_clean.py src/loystar_client_clean.py src/claude_compat.py src/main_clean.py src/cli.py main.py
       - name: Run clean-core regression tests
         run: pytest -q tests/unit/test_clean_core.py
       - name: Run full suite
