@@ -34,6 +34,7 @@ TEST_ENV.update(
         "OAUTH_DCR_INITIAL_ACCESS_TOKEN": "",
         "OAUTH_ENABLE_CIMD": "true",
         "OAUTH_ALLOW_DYNAMIC_REGISTRATION": "true",
+        "RUN_DURABLE_OAUTH_TESTS": "0",
         "ALLOW_ENVIRONMENT_CREDENTIALS": "false",
         "LOYSTAR_ACCESS_TOKEN": "",
         "LOYSTAR_CLIENT": "",
@@ -53,12 +54,14 @@ COMPILE_TARGETS = [
     "src/loystar_client_clean.py",
     "src/claude_compat.py",
     "src/main_clean.py",
+    "src/cli.py",
     "main.py",
 ]
 
 TEST_TARGETS = [
     "tests/unit/test_clean_core.py",
     "tests/unit/test_claude_compat.py",
+    "tests/unit/test_repository_contracts.py",
 ]
 
 
