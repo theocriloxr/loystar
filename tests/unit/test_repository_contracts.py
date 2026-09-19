@@ -49,3 +49,9 @@ def test_portable_plugin_targets_production_mcp():
 
 def test_readme_contains_no_nul_bytes():
     assert "\x00" not in (ROOT / "README.md").read_text(encoding="utf-8")
+
+
+def test_vercel_entrypoint_uses_production_wrapper():
+    content = (ROOT / "api/index.py").read_text(encoding="utf-8")
+    assert "from main import app" in content
+    assert "from src.main import app" not in content
