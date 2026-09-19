@@ -1,0 +1,34 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "loystar-mcp",
+  "version": "1.0.0",
+  "description": "Read-only merchant-scoped Loystar business data through an OAuth-protected MCP server.",
+  "repository": "https://github.com/theocriloxr/loystar",
+  "license": "MIT",
+  "keywords": [
+    "loystar",
+    "merchant",
+    "sales",
+    "customers",
+    "loyalty",
+    "mcp"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Loystar Merchant",
+        "shortDescription": "Explore your authorized Loystar merchant data.",
+        "longDescription": "Connect a Loystar merchant account with OAuth and use read-only tools for customers, sales, orders, products, loyalty, branches, invoices, SMS balance, and subscription data.",
+        "category": "Productivity",
+        "capabilities": [
+          "Read"
+        ],
+        "defaultPrompt": [
+          "Show me my latest Loystar sales.",
+          "Summarize my recent customer activity.",
+          "Which products appear in my Loystar catalogue?"
+        ]
+      }
+    }
+  }
+}
