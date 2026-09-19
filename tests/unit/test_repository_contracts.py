@@ -55,3 +55,8 @@ def test_vercel_entrypoint_uses_production_wrapper():
     content = (ROOT / "api/index.py").read_text(encoding="utf-8")
     assert "from main import app" in content
     assert "from src.main import app" not in content
+
+
+def test_requirements_do_not_reinstall_unused_mcp_sdk():
+    requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
+    assert "mcp[server]" not in requirements
