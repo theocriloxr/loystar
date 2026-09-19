@@ -446,7 +446,7 @@ async def oauth_authorize_page(
     )
     redirect_host = urllib.parse.urlparse(redirect_uri).hostname or "the requesting application"
 
-    return f"""<!doctype html>
+    page = f"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
@@ -473,6 +473,21 @@ button.deny{{margin-top:8px;background:#fff;color:#344054;border:1px solid #d0d5
 <button type="submit" name="decision" value="approve">Approve read access</button>
 <button class="deny" type="submit" name="decision" value="deny" formnovalidate>Cancel</button>
 </form></main></body></html>"""
+    redirect_parts = urllib.parse.urlsplit(redirect_uri)
+    redirect_origin = f"{redirect_parts.scheme}://{redirect_parts.netloc}"
+    authorization_csp = (
+        "default-src 'none'; style-src 'unsafe-inline'; "
+        f"form-action 'self' {redirect_origin}; "
+        "frame-ancestors 'none'; base-uri 'none'"
+    )
+    return HTMLResponse(
+        content=page,
+        headers={
+            "Content-Security-Policy": authorization_csp,
+            "Cache-Control": "no-store",
+            "Pragma": "no-cache",
+        },
+    )
 
 
 @app.post("/oauth/authorize")
