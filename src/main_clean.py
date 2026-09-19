@@ -711,7 +711,16 @@ async def mcp_streamable_http(request: JsonRpcRequest, http_request: Request):
 
     requested_protocol = http_request.headers.get("mcp-protocol-version")
     supported = app.state.mcp_server.supported_protocol_versions
-    if requested_protocol and requested_protocol not in supported:
+    # MCP 2026-07-28 clients in auto-negotiation mode probe older servers with
+    # server/discover before falling back to the legacy initialize handshake.
+    # Let that single probe reach dispatch so it receives JSON-RPC -32601
+    # instead of an HTTP 400. Do not advertise or accept modern-era tool calls
+    # until this server implements the full 2026-07-28 request envelope.
+    modern_discovery_probe = (
+        request.method == "server/discover"
+        and requested_protocol == "2026-07-28"
+    )
+    if requested_protocol and requested_protocol not in supported and not modern_discovery_probe:
         raise HTTPException(status_code=400, detail="Unsupported MCP protocol version.")
 
     await enforce_connector_controls(http_request)
