@@ -99,6 +99,7 @@ def _authorize_post(client: TestClient, registration: dict, verifier: str):
 def test_clean_metadata_health_and_mcp_challenge():
     with _client() as client:
         health = client.get("/healthz")
+        robots = client.get("/robots.txt")
         metadata = client.get("/.well-known/oauth-authorization-server")
         mcp = client.post(
             "/mcp",
@@ -107,6 +108,8 @@ def test_clean_metadata_health_and_mcp_challenge():
 
     assert health.status_code == 200
     assert health.json()["version"] == "2.0.0-clean"
+    assert robots.status_code == 200
+    assert robots.text == "User-agent: *\nDisallow: /\n"
     assert metadata.status_code == 200
     assert metadata.headers["cache-control"] == "no-store"
     assert metadata.json()["authorization_response_iss_parameter_supported"] is True
