@@ -275,6 +275,15 @@ async def root():
     }
 
 
+@app.get("/robots.txt", include_in_schema=False)
+async def robots():
+    return Response(
+        content="User-agent: *\nDisallow: /\n",
+        media_type="text/plain",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
 @app.get("/live")
 async def live():
     return {"status": "alive"}

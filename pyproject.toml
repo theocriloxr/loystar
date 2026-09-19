@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "loystar-mcp-server"
 version = "1.0.0"
-description = "Platform-agnostic MCP-driven customer loyalty management system"
+description = "OAuth-protected MCP bridge for merchant-scoped Loystar business data"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
@@ -61,10 +61,10 @@ dev = [
 ]
 
 [project.scripts]
-loystar-server = "src.main:main"
+loystar-server = "src.cli:main"
 
-[tool.setuptools]
-packages = ["src"]
+[tool.setuptools.packages.find]
+include = ["src*"]
 
 [tool.setuptools.package-data]
 src = ["py.typed"]
@@ -75,6 +75,7 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 asyncio_mode = "auto"
+pythonpath = ["."]
 addopts = "-v --tb=short"
 
 [tool.black]

@@ -14,8 +14,6 @@ import hashlib
 import json
 import secrets
 import sys
-from urllib.parse import urljoin
-
 import httpx
 
 
@@ -36,6 +34,7 @@ def main() -> int:
 
     origin = sys.argv[1].rstrip("/")
     mcp_resource = f"{origin}/mcp"
+    claude_resource = f"{origin}/mcp-v2"
     redirect_uri = "https://client.example/callback"
     verifier = secrets.token_urlsafe(48)[:64]
 
@@ -48,6 +47,11 @@ def main() -> int:
         protected_json = protected.json()
         require(protected_json.get("resource") == mcp_resource, "protected resource mismatch")
         require(protected.headers.get("cache-control") == "no-store", "metadata must be no-store")
+
+        claude_protected = client.get(f"{origin}/.well-known/oauth-protected-resource/mcp-v2")
+        require(claude_protected.status_code == 200, "Claude protected-resource discovery failed")
+        require(claude_protected.json().get("resource") == claude_resource, "Claude protected resource mismatch")
+        require(claude_protected.headers.get("cache-control") == "no-store", "Claude metadata must be no-store")
 
         authorization = client.get(f"{origin}/.well-known/oauth-authorization-server")
         require(authorization.status_code == 200, "authorization-server discovery failed")
@@ -63,6 +67,15 @@ def main() -> int:
         )
         require(unauthenticated.status_code == 401, f"unauthenticated MCP should be 401, got {unauthenticated.status_code}")
         require("resource_metadata=" in unauthenticated.headers.get("www-authenticate", ""), "MCP OAuth challenge missing")
+
+        claude_unauthenticated = client.post(
+            claude_resource,
+            headers={"Content-Type": "application/json"},
+            json={"jsonrpc": "2.0", "id": 2, "method": "initialize", "params": {}},
+        )
+        require(claude_unauthenticated.status_code == 401, f"unauthenticated Claude MCP should be 401, got {claude_unauthenticated.status_code}")
+        claude_challenge = claude_unauthenticated.headers.get("www-authenticate", "")
+        require("resource_metadata=" in claude_challenge and "/mcp-v2" in claude_challenge, "Claude MCP OAuth challenge missing")
 
         registration_endpoint = authorization_json.get("registration_endpoint")
         require(registration_endpoint, "DCR endpoint not advertised")
@@ -107,8 +120,10 @@ def main() -> int:
                 "checks": [
                     "health",
                     "protected_resource_metadata",
+                    "claude_protected_resource_metadata",
                     "authorization_server_metadata",
                     "mcp_oauth_challenge",
+                    "claude_mcp_oauth_challenge",
                     "dynamic_client_registration",
                     "dcr_read_after_write",
                     "authorization_page",
