@@ -74,7 +74,7 @@ Windows PowerShell:
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 Copy-Item .env.example .env
-uvicorn src.main:app --reload
+uvicorn main:app --reload
 ```
 
 macOS/Linux:
@@ -83,7 +83,7 @@ macOS/Linux:
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-uvicorn src.main:app --reload
+uvicorn main:app --reload
 ```
 
 Open `http://localhost:8000/health`. Local development uses in-memory OAuth, audit, and rate-limit state when PostgreSQL and Redis are not configured. That mode is only for development and tests.
@@ -246,6 +246,16 @@ curl https://loystar-mcp.example.com/.well-known/oauth-authorization-server
 
 `/live` checks the process. `/health` is the readiness endpoint and returns `503` in production if PostgreSQL or Redis is unavailable.
 
+## Plugin package
+
+This repository now includes a portable Agent Plugins package for ChatGPT and Codex:
+
+- `plugin.json` — portable plugin identity and OpenAI presentation metadata;
+- `mcp.json` — Streamable HTTP binding to `https://loystar-production.up.railway.app/mcp`;
+- `skills/merchant-insights/` — a read-only merchant analytics workflow and MCP dependency declaration.
+
+The plugin does not bypass OAuth. Each merchant still authorizes the Loystar account through the server's OAuth flow, and the production tools remain read-only.
+
 ## Connecting ChatGPT, Claude, Perplexity, or another MCP client
 
 Use this remote MCP URL:
@@ -326,20 +336,20 @@ This code still needs normal production operations: secret management, database 
 ## Project layout
 
 ```text
-src/main.py                 FastAPI app, OAuth routes, MCP transport
-src/server.py               MCP protocol, schemas, and tool registry
-src/loystar_client.py       Merchant-scoped Loystar API client
-src/oauth_store.py          OAuth clients, codes, token rotation/revocation
-src/security.py             Redis rate limits and sanitized audit logging
-src/http_security.py        Host, Origin, HTTPS, header, and body controls
-src/database.py             Async PostgreSQL lifecycle
-src/models.py               PostgreSQL models
-migrations/                 Production database upgrades
-tests/unit/                 Protocol and security tests
+main.py                     Production wrapper, health-host adapter, build identity
+src/main_clean.py            Clean FastAPI OAuth + MCP application
+src/claude_compat.py         Isolated /mcp-v2 compatibility resource
+src/loystar_client_clean.py  Merchant-scoped Loystar API client
+src/oauth_store_clean.py     Durable OAuth clients, codes, tokens and rotation
+src/security.py              Redis rate limits and sanitized audit logging
+src/http_security.py         Host, Origin, HTTPS, header, and body controls
+src/database.py              Async PostgreSQL lifecycle
+plugin.json / mcp.json       Portable ChatGPT/Codex plugin package
+skills/merchant-insights/    Reusable merchant-insights workflow
+migrations/                  Production database upgrades
+tests/unit/                  Protocol, security and release-contract tests
 ```
 
 ## Current status
 
 This repository now implements the same core product category as a permissioned business-data MCP bridge: merchant consent, live account-scoped data, remote MCP transport, OAuth, durable security state, and revocation. It is an independent Loystar implementation and does not claim feature-for-feature parity, certification, or affiliation with Tyms or any other MCP server.
-#   l o y s t a r  
- 
