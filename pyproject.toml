@@ -63,8 +63,8 @@ dev = [
 [project.scripts]
 loystar-server = "src.cli:main"
 
-[tool.setuptools]
-packages = ["src"]
+[tool.setuptools.packages.find]
+include = ["src*"]
 
 [tool.setuptools.package-data]
 src = ["py.typed"]
@@ -75,6 +75,7 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 asyncio_mode = "auto"
+pythonpath = ["."]
 addopts = "-v --tb=short"
 
 [tool.black]
