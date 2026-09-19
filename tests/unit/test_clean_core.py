@@ -125,6 +125,9 @@ def test_dcr_client_is_immediately_available_for_authorization():
 
     assert response.status_code == 200
     assert registration["client_id"] in response.text
+    csp = response.headers["content-security-policy"]
+    assert "form-action 'self' https://client.example" in csp
+    assert "frame-ancestors 'none'" in csp
 
 
 def test_public_dcr_oauth_flow_reaches_token_refresh_and_authenticated_mcp(monkeypatch):
