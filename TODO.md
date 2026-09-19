@@ -24,17 +24,18 @@ audit logging, and Railway deployment support.
 - [x] Automated unit coverage for MCP, OAuth, security, and demo flows
 - [x] Railway-friendly PostgreSQL URL normalization
 
-## Before the first real merchant deployment
+## Production verification
 
-- [ ] Create Railway PostgreSQL and Redis services
-- [ ] Deploy the MCP service and generate a public HTTPS domain
-- [ ] Set production variables from `.env.production.example`
-- [ ] Set `MCP_SERVER_BASE_URL` and `OAUTH_ISSUER` to the exact public origin
-- [ ] Add the public domain and `healthcheck.railway.app` to `ALLOWED_HOSTS`
-- [ ] Complete the OAuth connection from a real MCP host
-- [ ] Connect a real Loystar merchant and verify at least one live read tool
-- [ ] Test token refresh and revocation
-- [ ] Record a live AI-client smoke test
+- [x] Railway PostgreSQL and Redis services are provisioned
+- [x] Production MCP service is deployed from `main`
+- [x] Public HTTPS endpoint is live at `https://loystar-production.up.railway.app`
+- [x] OAuth issuer and protected-resource discovery resolve to the production origin
+- [x] Health checks report PostgreSQL and Redis ready
+- [x] Dynamic client registration and unauthenticated OAuth discovery are covered by the remote smoke test
+- [x] ChatGPT/Codex portable plugin package is present in the repository
+- [ ] Complete a real merchant sign-in from each intended AI host
+- [ ] Verify at least one live merchant read tool end to end with authorized data
+- [ ] Record live refresh-token rotation and revocation against an authorized merchant session
 
 ## Future product phases
 
