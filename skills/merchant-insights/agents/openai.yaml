@@ -1,0 +1,7 @@
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "loystar"
+      description: "Read authorized merchant-scoped Loystar business data"
+      transport: "streamable_http"
+      url: "https://loystar-production.up.railway.app/mcp"
