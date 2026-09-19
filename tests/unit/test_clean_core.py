@@ -188,6 +188,27 @@ def test_public_dcr_oauth_flow_reaches_token_refresh_and_authenticated_mcp(monke
         assert initialize.status_code == 200, initialize.text
         assert initialize.json()["result"]["serverInfo"]["name"]
 
+        modern_probe = client.post(
+            "/mcp",
+            headers={
+                "Authorization": f"Bearer {token_payload['access_token']}",
+                "MCP-Protocol-Version": "2026-07-28",
+            },
+            json={
+                "jsonrpc": "2.0",
+                "id": 8,
+                "method": "server/discover",
+                "params": {
+                    "_meta": {
+                        "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                        "io.modelcontextprotocol/clientCapabilities": {},
+                    }
+                },
+            },
+        )
+        assert modern_probe.status_code == 200, modern_probe.text
+        assert modern_probe.json()["error"]["code"] == -32601
+
         refresh = client.post(
             "/oauth/token",
             data={
